@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Склад</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:var(--tg-theme-bg-color,#fff); --text:var(--tg-theme-text-color,#111);
+    --hint:var(--tg-theme-hint-color,#8a8a8e); --link:var(--tg-theme-link-color,#2481cc);
+    --btn:var(--tg-theme-button-color,#2481cc); --btn-text:var(--tg-theme-button-text-color,#fff);
+    --sec:var(--tg-theme-secondary-bg-color,#f1f1f4); --red:#e5484d; --orange:#f5a524; --green:#30a46c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.4 -apple-system,system-ui,Roboto,sans-serif;background:var(--sec);color:var(--text);padding-bottom:72px}
+  header{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid rgba(128,128,128,.15)}
+  header h1{font-size:17px;margin:0;flex:1} header small{color:var(--hint)}
+  .icon-btn{background:none;border:0;color:var(--link);font-size:20px;padding:4px 8px}
+  main{padding:12px}
+  .view{display:none}.view.on{display:block}
+  .card{background:var(--bg);border-radius:12px;padding:12px;margin-bottom:10px}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--hint);margin:14px 4px 6px}
+  label{display:block;font-size:13px;color:var(--hint);margin:10px 0 4px}
+  input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid rgba(128,128,128,.3);background:var(--bg);color:var(--text);font-size:16px}
+  .row{display:flex;gap:8px}.row>*{flex:1}
+  .btn{width:100%;padding:13px;border:0;border-radius:10px;background:var(--btn);color:var(--btn-text);font-size:16px;font-weight:600;margin-top:14px}
+  .btn.sec{background:var(--sec);color:var(--link)} .btn:disabled{opacity:.5}
+  .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px}
+  .chip{white-space:nowrap;padding:6px 12px;border-radius:16px;background:var(--bg);border:1px solid rgba(128,128,128,.25);font-size:13px}
+  .chip.on{background:var(--btn);color:var(--btn-text);border-color:var(--btn)}
+  .item{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  .item .nm{flex:1}.item .q{font-weight:700;white-space:nowrap}
+  .sub{font-size:12px;color:var(--hint)}
+  .badge{display:inline-block;font-size:11px;padding:2px 7px;border-radius:8px;margin-top:3px}
+  .b-red{background:rgba(229,72,77,.15);color:var(--red)} .b-or{background:rgba(245,165,36,.18);color:#b07000} .b-gr{background:rgba(48,164,108,.15);color:var(--green)}
+  .batches{margin-top:8px;border-top:1px dashed rgba(128,128,128,.3);padding-top:6px;font-size:13px}
+  .picker{position:relative}
+  .plist{position:absolute;left:0;right:0;top:100%;z-index:10;background:var(--bg);border:1px solid rgba(128,128,128,.3);border-radius:10px;max-height:260px;overflow:auto;box-shadow:0 6px 20px rgba(0,0,0,.15)}
+  .opt{padding:10px 12px;border-bottom:1px solid rgba(128,128,128,.12)} .opt span{display:block;font-size:12px;color:var(--hint)}
+  .hintbox{font-size:13px;margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--sec)}
+  .warn{color:#b07000}.err{color:var(--red)}
+  nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--bg);border-top:1px solid rgba(128,128,128,.2);padding-bottom:env(safe-area-inset-bottom)}
+  nav button{flex:1;background:none;border:0;padding:8px 2px 10px;color:var(--hint);font-size:11px}
+  nav button b{display:block;font-size:20px;font-weight:400}
+  nav button.on{color:var(--btn)}
+  .dot{display:inline-block;min-width:16px;padding:0 4px;border-radius:8px;background:var(--red);color:#fff;font-size:10px;margin-left:2px}
+  #overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-end;z-index:20}
+  #overlay.on{display:flex}
+  #sheet{background:var(--bg);width:100%;border-radius:16px 16px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+  #sheetText{white-space:pre-wrap;font-size:15px}
+  #loader{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.2);z-index:30}
+  #loader.on{display:flex}
+  .spin{width:42px;height:42px;border-radius:50%;border:4px solid rgba(255,255,255,.4);border-top-color:var(--btn);animation:s 0.8s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .empty{text-align:center;color:var(--hint);padding:30px 10px}
+</style>
+</head>
+<body>
+<header><h1>📦 Склад</h1><small id="who"></small><button class="icon-btn" id="refresh" title="Обновить">⟳</button></header>
+
+<main>
+  <!-- ОСТАТКИ -->
+  <section class="view on" id="v-stock">
+    <input id="q" placeholder="Поиск товара…" autocomplete="off">
+    <div class="chips" id="groupChips" style="margin-top:8px"></div>
+    <div id="stockList"></div>
+  </section>
+
+  <!-- ПРИХОД -->
+  <section class="view" id="v-in">
+    <div class="card">
+      <label>Тип</label><select id="in-type"></select>
+      <label>Товар</label>
+      <div class="picker" id="in-item"><input placeholder="Начните вводить название" autocomplete="off"><div class="plist" hidden></div></div>
+      <div class="row">
+        <div><label>Кол-во <span class="unit"></span></label><input id="in-qty" inputmode="decimal"></div>
+        <div><label>Партия</label><input id="in-batch" placeholder="напр. С-4"></div>
+      </div>
+      <label>Дата производства (пусто = сегодня)</label><input id="in-date" type="date">
+      <div class="row">
+        <div><label>Откуда / поставщик</label><input id="in-from"></div>
+        <div><label>Цена за ед., сум</label><input id="in-price" inputmode="decimal"></div>
+      </div>
+      <button class="btn" id="in-go">Записать приход</button>
+    </div>
+  </section>
+
+  <!-- ВЫПУСК -->
+  <section class="view" id="v-prod">
+    <div class="card">
+      <div class="sub">Сублимация: сырьё → сублимат. Фасовка: сублимат → пачки (упаковка спишется по нормам сама).</div>
+      <label>Что получили</label>
+      <div class="picker" id="pr-item"><input placeholder="Продукт" autocomplete="off"><div class="plist" hidden></div></div>
+      <div class="row">
+        <div><label>Кол-во <span class="unit"></span></label><input id="pr-qty" inputmode="decimal"></div>
+        <div><label>Партия продукта</label><input id="pr-batch" placeholder="напр. С-4"></div>
+      </div>
+      <label>Из чего</label>
+      <div class="picker" id="pr-raw"><input placeholder="Сырьё или сублимат" autocomplete="off"><div class="plist" hidden></div></div>
+      <div class="row">
+        <div><label>Кол-во сырья <span class="unit"></span></label><input id="pr-rawqty" inputmode="decimal"></div>
+        <div><label>Брак, кг</label><input id="pr-brak" inputmode="decimal" placeholder="если был"></div>
+      </div>
+      <label>Партия сырья</label><select id="pr-rawbatch"><option value="">Авто — сначала ближайший срок</option></select>
+      <div class="hintbox" id="pr-check" hidden></div>
+      <button class="btn" id="pr-go">Записать выпуск</button>
+    </div>
+  </section>
+
+  <!-- РАСХОД -->
+  <section class="view" id="v-out">
+    <div class="card">
+      <label>Тип</label><select id="out-type"></select>
+      <label>Товар</label>
+      <div class="picker" id="out-item"><input placeholder="Начните вводить название" autocomplete="off"><div class="plist" hidden></div></div>
+      <label>Партия</label><select id="out-batch"><option value="">Авто — сначала ближайший срок</option></select>
+      <div class="row">
+        <div><label>Кол-во <span class="unit"></span></label><input id="out-qty" inputmode="decimal"></div>
+        <div><label id="out-reason-l">Кому / причина</label><input id="out-reason"></div>
+      </div>
+      <div class="hintbox warn" id="out-hint" hidden></div>
+      <button class="btn" id="out-go">Записать расход</button>
+    </div>
+  </section>
+
+  <!-- ВНИМАНИЕ -->
+  <section class="view" id="v-alert">
+    <h2>Проверки</h2><div class="card" id="checks"></div>
+    <h2>Товары с проблемами</h2><div id="problems"></div>
+    <h2>Сроки — меньше 60 дней</h2><div id="expiry"></div>
+    <div id="adminBox" hidden>
+      <h2>Руководитель</h2>
+      <div class="card"><button class="btn sec" id="loadLast" style="margin-top:0">Показать последние записи</button><div id="lastList"></div></div>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-v="stock" class="on"><b>📋</b>Остатки</button>
+  <button data-v="in"><b>📥</b>Приход</button>
+  <button data-v="prod"><b>🏭</b>Выпуск</button>
+  <button data-v="out"><b>📤</b>Расход</button>
+  <button data-v="alert"><b>⚠️</b>Внимание<span class="dot" id="alertDot" hidden></span></button>
+</nav>
+
+<div id="overlay"><div id="sheet"><div id="sheetText"></div>
+  <button class="btn" id="sheetOk">Готово</button>
+  <button class="btn sec" id="sheetUndo" hidden>↩ Отменить эту запись</button>
+</div></div>
+<div id="loader"><div class="spin"></div></div>
+
+<script>
+// ====== АДРЕС ВЕБ-ПРИЛОЖЕНИЯ APPS SCRIPT (заканчивается на /exec) ======
+const API_URL = 'https://script.google.com/macros/s/AKfycbyT1Q0cfAhF7HZC-UszWwxwlpWrInDGVwxhoftoRhDE0INRwYYO2xaqtYqp8QNa1kVsNw/exec';
+// ========================================================================
+
+const tg = window.Telegram ? Telegram.WebApp : null;
+const S = {items: [], stock: [], checks: [], expiry: [], groups: [], admin: false, group: 'Все'};
+const REASON_REQ = ['Брак', 'Потеря/усушка', 'Списание (срок)', 'Недостача (инвентаризация)'];
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = n => typeof n === 'number' ? (Math.round(n * 1000) / 1000).toLocaleString('ru-RU') : esc(n);
+let busy = false;
+
+async function api(action, data) {
+  const r = await fetch(API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'},
+    body: JSON.stringify({initData: tg ? tg.initData : '', action, data: data || {}})});
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.error || 'Ошибка');
+  return j;
+}
+function load(on) { $('loader').classList.toggle('on', on); }
+function haptic(t) { try { tg.HapticFeedback.notificationOccurred(t); } catch (e) {} }
+function ask(text) { return new Promise(res => tg && tg.showConfirm ? tg.showConfirm(text, res) : res(confirm(text))); }
+function sheet(text, canUndo) {
+  $('sheetText').textContent = text; $('sheetUndo').hidden = !canUndo; $('overlay').classList.add('on');
+}
+$('sheetOk').onclick = () => $('overlay').classList.remove('on');
+$('sheetUndo').onclick = async () => {
+  if (!await ask('Удалить только что внесённую запись?')) return;
+  $('overlay').classList.remove('on'); await run('undo', {}, false);
+};
+
+// ---------- навигация ----------
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'v-' + b.dataset.v));
+  window.scrollTo(0, 0);
+});
+
+// ---------- выбор товара с поиском ----------
+function stockOf(name) { return S.stock.find(s => s.n === name); }
+function makePicker(id, groupsFn, onPick) {
+  const box = $(id), inp = box.querySelector('input'), list = box.querySelector('.plist');
+  let val = null, arr = [];
+  function render() {
+    const w = inp.value.toLowerCase().split(/\s+/).filter(Boolean), gs = groupsFn();
+    arr = S.items.filter(i => (!gs || gs.includes(i.g)) && w.every(x => i.n.toLowerCase().includes(x))).slice(0, 40);
+    list.innerHTML = arr.length ? arr.map((i, k) => {
+      const s = stockOf(i.n);
+      return `<div class="opt" data-k="${k}">${esc(i.n)}<span>${esc(i.g)} · на складе: ${s ? fmt(s.q) : '—'} ${esc(i.u)}</span></div>`;
+    }).join('') : '<div class="opt"><span>ничего не найдено</span></div>';
+    list.hidden = false;
+  }
+  inp.addEventListener('input', () => { val = null; render(); onPick(null); });
+  inp.addEventListener('focus', render);
+  list.addEventListener('click', e => {
+    const o = e.target.closest('.opt'); if (!o || o.dataset.k === undefined) return;
+    val = arr[+o.dataset.k]; inp.value = val.n; list.hidden = true; inp.blur(); onPick(val);
+  });
+  document.addEventListener('click', e => { if (!box.contains(e.target)) list.hidden = true; });
+  return {get: () => val, reset() { val = null; inp.value = ''; onPick(null); }};
+}
+function setUnit(sectionId, inputId, item) {
+  const lab = $(inputId).previousElementSibling.querySelector('.unit');
+  if (lab) lab.textContent = item ? '(' + item.u + ')' : '';
+}
+async function fillBatches(sel, item) {
+  sel.innerHTML = '<option value="">Авто — сначала ближайший срок</option>';
+  if (!item || item.g === 'Упаковка') return;
+  try {
+    const j = await api('batches', {name: item.n});
+    j.data.forEach(b => sel.insertAdjacentHTML('beforeend',
+      `<option value="${esc(b.b)}">${esc(b.b || 'без партии')} — ${fmt(b.q)} ${esc(item.u)}, до ${esc(b.exp)}</option>`));
+    if (!j.data.length) sel.insertAdjacentHTML('beforeend', '<option disabled>нет партий с остатком</option>');
+  } catch (e) {}
+}
+
+// ---------- ОСТАТКИ ----------
+function badge(st) {
+  if (!st || st === 'ок') return '';
+  const c = st.includes('⛔') ? 'b-red' : st.includes('⚠') ? 'b-or' : '';
+  return `<span class="badge ${c}">${esc(st)}</span>`;
+}
+function renderStock() {
+  $('groupChips').innerHTML = ['Все'].concat(S.groups).map(g => `<span class="chip ${g === S.group ? 'on' : ''}" data-g="${esc(g)}">${esc(g)}</span>`).join('');
+  const w = $('q').value.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = S.stock.filter(s => (S.group === 'Все' || s.g === S.group) && w.every(x => s.n.toLowerCase().includes(x)));
+  $('stockList').innerHTML = rows.length ? rows.map((s, k) => `
+    <div class="card" data-n="${esc(s.n)}">
+      <div class="item"><div class="nm">${esc(s.n)}<div class="sub">${s.exp ? 'ближайший срок: ' + esc(s.exp) : ''}</div>${badge(s.st)}</div>
+      <div class="q">${fmt(s.q)} ${esc(s.u)}</div></div>
+    </div>`).join('') : '<div class="empty">Ничего не найдено</div>';
+}
+$('groupChips').onclick = e => { const c = e.target.closest('.chip'); if (c) { S.group = c.dataset.g; renderStock(); } };
+$('q').oninput = renderStock;
+$('stockList').onclick = async e => {
+  const card = e.target.closest('.card'); if (!card) return;
+  const old = card.querySelector('.batches'); if (old) { old.remove(); return; }
+  const it = S.items.find(i => i.n === card.dataset.n); if (!it || it.g === 'Упаковка') return;
+  const div = document.createElement('div'); div.className = 'batches'; div.textContent = 'загрузка партий…'; card.appendChild(div);
+  try {
+    const j = await api('batches', {name: it.n});
+    div.innerHTML = j.data.length ? j.data.map(b => `партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(it.u)}, до ${esc(b.exp)}`).join('<br>') : 'партий с остатком нет';
+  } catch (err) { div.textContent = err.message; }
+};
+
+// ---------- ВНИМАНИЕ ----------
+function renderAlert() {
+  const bad = S.checks.filter(c => c.n > 0).length;
+  $('alertDot').hidden = !bad; $('alertDot').textContent = bad;
+  $('checks').innerHTML = S.checks.map(c => `<div class="item" style="padding:4px 0"><div class="nm">${esc(c.t)}</div><div class="q ${c.n > 0 ? 'err' : ''}">${fmt(c.n)}</div></div>`).join('');
+  const pr = S.stock.filter(s => s.st && s.st !== 'ок' && s.st !== 'нет в наличии');
+  $('problems').innerHTML = pr.length ? pr.map(s => `<div class="card"><div class="item"><div class="nm">${esc(s.n)}<br>${badge(s.st)}</div><div class="q">${fmt(s.q)} ${esc(s.u)}</div></div></div>`).join('') : '<div class="card sub">✅ Проблем нет</div>';
+  $('expiry').innerHTML = S.expiry.length ? S.expiry.map(x => `<div class="card"><div class="item"><div class="nm">${x.d < 0 ? '⛔' : '⚠'} ${esc(x.n)}<div class="sub">партия ${esc(x.b)} · до ${esc(x.exp)} (${x.d} дн)</div></div><div class="q">${fmt(x.q)}</div></div></div>`).join('') : '<div class="card sub">✅ Партий со сроком меньше 60 дней нет</div>';
+  $('adminBox').hidden = !S.admin;
+}
+$('loadLast').onclick = async () => {
+  load(true);
+  try {
+    const j = await api('last', {n: 15});
+    $('lastList').innerHTML = j.data.length ? j.data.map((t, i) => `<div class="item" style="padding:8px 0;border-bottom:1px solid rgba(128,128,128,.15)"><div class="nm sub" style="color:var(--text)">${i + 1}. ${esc(t)}</div><button class="icon-btn" data-n="${i + 1}" style="color:var(--red)">🗑</button></div>`).join('') : '<div class="sub">Записей нет</div>';
+  } catch (e) { sheet('⚠ ' + e.message); } finally { load(false); }
+};
+$('lastList').onclick = async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const line = b.previousElementSibling.textContent;
+  if (!await ask('Удалить запись?\n' + line)) return;
+  await run('del', {n: b.dataset.n}, false); $('lastList').innerHTML = '';
+};
+
+// ---------- запись ----------
+async function run(action, data, canUndo, after) {
+  if (busy) return; busy = true; load(true);
+  document.querySelectorAll('.btn').forEach(b => b.disabled = true);
+  try {
+    const j = await api(action, data);
+    if (j.stock) S.stock = j.stock;
+    haptic('success'); sheet(j.text, canUndo); after && after();
+    renderStock(); refreshQuiet();
+  } catch (e) { haptic('error'); sheet('⚠ ' + e.message); }
+  finally { busy = false; load(false); document.querySelectorAll('.btn').forEach(b => b.disabled = false); }
+}
+const isoToRu = v => v ? v.split('-').reverse().join('.') : '';
+
+// Приход
+const pIn = makePicker('in-item', () => null, it => setUnit('v-in', 'in-qty', it));
+$('in-go').onclick = () => {
+  const it = pIn.get(); if (!it) return sheet('⚠ Выберите товар из списка.');
+  run('in', {type: $('in-type').value, item: it.n, qty: $('in-qty').value, batch: $('in-batch').value,
+             date: isoToRu($('in-date').value), from: $('in-from').value, price: $('in-price').value}, true,
+      () => { pIn.reset(); ['in-qty', 'in-batch', 'in-date', 'in-price'].forEach(i => $(i).value = ''); });
+};
+
+// Выпуск
+const pPr = makePicker('pr-item', () => ['Сублимат (кг)', 'ГП опт (кг)', 'ГП фасованная (шт)'], it => { setUnit('v-prod', 'pr-qty', it); prCheck(); });
+const pRaw = makePicker('pr-raw', () => ['Сырьё', 'Сублимат (кг)', 'ГП опт (кг)'], it => { setUnit('v-prod', 'pr-rawqty', it); fillBatches($('pr-rawbatch'), it); prCheck(); });
+const num = v => parseFloat(String(v).replace(/\s/g, '').replace(',', '.'));
+function prCheck() {
+  const it = pPr.get(), q = num($('pr-qty').value), rq = num($('pr-rawqty').value), box = $('pr-check');
+  if (!it || !(q > 0) || !(rq > 0)) { box.hidden = true; return; }
+  box.hidden = false;
+  if (it.g === 'ГП фасованная (шт)') {
+    const g = rq * 1000 / q;
+    const over = it.w && g > it.w * 1.01;
+    box.className = 'hintbox ' + (over ? 'warn' : '');
+    box.textContent = 'Вес 1 шт по факту: ' + g.toFixed(1) + ' г' + (it.w ? (over ? ' ⚠ норма ' + it.w + ' г — перевес' : ' (норма ' + it.w + ' г)') : ' (норма не задана)');
+  } else {
+    const y = q / rq, low = it.y && y < it.y * 0.95;
+    box.className = 'hintbox ' + (low ? 'warn' : '');
+    box.textContent = 'Выход: ' + (y * 100).toFixed(1) + '%' + (it.y ? (low ? ' ⚠ ниже нормы ' : ' (норма ') + Math.round(it.y * 100) + '%' + (low ? '' : ')') : ' (норма не задана)');
+  }
+}
+['pr-qty', 'pr-rawqty'].forEach(i => $(i).addEventListener('input', prCheck));
+$('pr-go').onclick = () => {
+  const it = pPr.get(), raw = pRaw.get();
+  if (!it || !raw) return sheet('⚠ Выберите продукт и сырьё из списка.');
+  run('prod', {item: it.n, qty: $('pr-qty').value, batch: $('pr-batch').value, raw: raw.n,
+               rawQty: $('pr-rawqty').value, rawBatch: $('pr-rawbatch').value, brak: $('pr-brak').value}, true,
+      () => { pPr.reset(); pRaw.reset(); ['pr-qty', 'pr-batch', 'pr-rawqty', 'pr-brak'].forEach(i => $(i).value = ''); $('pr-check').hidden = true; fillBatches($('pr-rawbatch'), null); });
+};
+
+// Расход
+const pOut = makePicker('out-item', () => null, it => { setUnit('v-out', 'out-qty', it); fillBatches($('out-batch'), it); });
+function outHint() {
+  const req = REASON_REQ.includes($('out-type').value);
+  $('out-reason-l').textContent = req ? 'Причина (обязательно)' : 'Кому / причина';
+  $('out-hint').hidden = !req;
+  $('out-hint').textContent = 'Брак и потери записываются отдельной строкой — обязательно укажите причину.';
+}
+$('out-type').onchange = outHint;
+$('out-go').onclick = () => {
+  const it = pOut.get(); if (!it) return sheet('⚠ Выберите товар из списка.');
+  if (REASON_REQ.includes($('out-type').value) && !$('out-reason').value.trim()) return sheet('⚠ Укажите причину.');
+  run('out', {type: $('out-type').value, item: it.n, qty: $('out-qty').value, reason: $('out-reason').value, batch: $('out-batch').value}, true,
+      () => { pOut.reset(); ['out-qty', 'out-reason'].forEach(i => $(i).value = ''); fillBatches($('out-batch'), null); });
+};
+
+// ---------- загрузка ----------
+function apply(d) {
+  Object.assign(S, {items: d.items, stock: d.stock, checks: d.checks, expiry: d.expiry, groups: d.groups, admin: d.admin});
+  $('who').textContent = d.who;
+  if (!$('in-type').options.length) {
+    $('in-type').innerHTML = d.types.in.filter(t => t !== 'Начальный остаток').map(t => `<option>${esc(t)}</option>`).join('');
+    $('out-type').innerHTML = d.types.out.map(t => `<option>${esc(t)}</option>`).join('');
+    outHint();
+  }
+  renderStock(); renderAlert();
+}
+async function init(showLoader) {
+  if (showLoader) load(true);
+  try { apply((await api('init')).data); }
+  catch (e) { if (showLoader) $('stockList').innerHTML = `<div class="empty err">⚠ ${esc(e.message)}</div>`; }
+  finally { if (showLoader) load(false); }
+}
+async function refreshQuiet() { try { apply((await api('init')).data); } catch (e) {} }
+$('refresh').onclick = () => init(true);
+
+if (tg) { tg.ready(); tg.expand(); }
+if (!tg || !tg.initData) {
+  $('stockList').innerHTML = '<div class="empty">Откройте приложение через кнопку «Склад» в Telegram-боте.</div>';
+} else if (API_URL.indexOf('/exec') < 0) {
+  $('stockList').innerHTML = '<div class="empty err">В файле index.html не вставлен адрес API_URL.</div>';
+} else init(true);
+</script>
+</body>
+</html>
