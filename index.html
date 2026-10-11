@@ -32,6 +32,7 @@ const CFG = {
   .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--pri);color:#fff;min-height:72px}
   .top h1{flex:1;margin:0;font-size:24px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .top .who{font-size:17px;opacity:.95;text-align:right}
+  .top .lang{min-height:52px;min-width:60px;padding:0 12px;border:3px solid #fff;border-radius:14px;background:transparent;color:#fff;font-weight:800;font-size:18px}
   .top .back{min-height:56px;min-width:130px;padding:0 18px;border:3px solid #fff;border-radius:14px;background:transparent;color:#fff;font-weight:800;font-size:20px}
   .wrap{max-width:1150px;margin:0 auto;padding:16px 16px 24px}
   h2{font-size:21px;margin:22px 4px 12px}
@@ -145,6 +146,224 @@ const stockQ = n => { const s = stockOf(n); return s && typeof s.q === 'number' 
 const isPack = it => it && it.g === PACK;
 const rid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
 function haptic(t) { try { TG.HapticFeedback.notificationOccurred(t); } catch (e) {} }
+
+/* ================= ЯЗЫК: русский / узбекский (латиница) =================
+   Интерфейс пишется по-русски, а в режиме UZ каждый текст на экране
+   переводится по словарю ниже. Названия товаров остаются как в Справочнике. */
+let LANG = (function () {
+  const saved = ls('sklad_lang'); if (saved === 'uz' || saved === 'ru') return saved;
+  try { if (TG && TG.initDataUnsafe.user.language_code === 'uz') return 'uz'; } catch (e) {}
+  return 'ru';
+})();
+const TYPES_UZ = {
+  'Закупка': 'Xarid', 'Начальный остаток': "Boshlang'ich qoldiq", 'Возврат от клиента': 'Mijozdan qaytarish',
+  'Излишек (инвентаризация)': 'Ortiqcha (inventarizatsiya)', 'Прочее': 'Boshqa',
+  'Отгрузка дистрибьютору': "Distribyutorga jo'natish", 'Продажа': 'Sotuv', 'Маркетплейс': 'Marketpleys',
+  'Образец/промо': 'Namuna/promo', 'Брак': 'Brak', 'Потеря/усушка': "Yo'qotish/qurish",
+  'Списание (срок)': 'Hisobdan chiqarish (muddat)', 'Возврат поставщику': 'Yetkazib beruvchiga qaytarish',
+  'Недостача (инвентаризация)': 'Kamomad (inventarizatsiya)', 'Сублимация': 'Sublimatsiya', 'Фасовка': 'Qadoqlash'
+};
+const UNITS_UZ = {'кг': 'kg', 'шт': 'dona', 'сум': "so'm", 'дн': 'kun', 'г': 'g', 'мин': 'daqiqa', 'ед.': 'birlik'};
+const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
+  // разделы и плитки
+  'Склад SUB PROFI': 'SUB PROFI ombori', 'Приход': 'Kirim', 'Расход': 'Chiqim', 'Выпуск': 'Ishlab chiqarish', 'Остатки': 'Qoldiq',
+  'Инвентаризация': 'Inventarizatsiya', 'Внимание': 'Diqqat', 'закупка, возврат': 'xarid, qaytarish',
+  'отгрузка, брак, списание': "jo'natish, brak, hisobdan chiqarish", 'загрузка, выгрузка, фасовка': 'yuklash, tushirish, qadoqlash',
+  'что есть на складе': 'omborda nima bor', 'пересчёт по факту': 'haqiqiy sanoq',
+  'Открыть →': 'Ochish →', 'Проблем не найдено': 'Muammo topilmadi', 'Сроки и проверки →': 'Muddatlar va tekshiruvlar →', 'Выгрузить →': 'Tushirish →',
+  // общие
+  'обязательно': 'majburiy', '(можно не заполнять)': '(ixtiyoriy)', 'Нажмите, чтобы ввести': 'Kiritish uchun bosing',
+  'Сменить': "O'zgartirish", 'Изменить': "O'zgartirish", 'Недавние:': 'Oxirgilar:', 'на складе:': 'omborda:',
+  'Ничего не найдено. Проверьте название или добавьте товар в Справочник таблицы.': "Hech narsa topilmadi. Nomini tekshiring yoki mahsulotni jadvaldagi Ma'lumotnomaga qo'shing.",
+  'Загрузка…': 'Yuklanmoqda…', 'Загружаю партии…': 'Partiyalar yuklanmoqda…', 'Загружаю склад…': 'Ombor yuklanmoqda…', 'Загружаю…': 'Yuklanmoqda…',
+  'Записываю…': 'Yozilmoqda…', 'Отменяю…': 'Bekor qilinmoqda…', 'Удаляю…': "O'chirilmoqda…", 'Проверяю…': 'Tekshirilmoqda…',
+  'Не закрывайте приложение и не нажимайте повторно.': 'Ilovani yopmang va qayta bosmang.',
+  'Нет': "Yo'q", 'Да': 'Ha', 'Нет связи': "Aloqa yo'q", 'Нет связи с интернетом.': "Internet aloqasi yo'q.",
+  'Нажмите «Повторить». Если запись уже дошла, дубль не появится.': "«Qayta urinish»ni bosing. Yozuv allaqachon yetib borgan bo'lsa, takror paydo bo'lmaydi.",
+  'Проверьте интернет и нажмите «Повторить».': "Internetni tekshiring va «Qayta urinish»ni bosing.",
+  'Отмена': 'Bekor qilish', 'Повторить': 'Qayta urinish', 'Очистить': 'Tozalash', 'Готово ✓': 'Tayyor ✓', 'Назад': 'Orqaga', 'Выйти': 'Chiqish',
+  'Выйти без записи? Введённые данные пропадут.': "Yozmasdan chiqasizmi? Kiritilgan ma'lumotlar yo'qoladi.", 'Остаться': 'Qolish',
+  'Ошибка': 'Xato', 'Понятно': 'Tushunarli', 'Хорошо': 'Yaxshi', 'Нет партий с остатком.': "Qoldig'i bor partiya yo'q.",
+  'Загрузка партий…': 'Partiyalar yuklanmoqda…', 'Ближайший срок': 'Eng yaqin muddat', 'ПРОСРОЧЕНА': "MUDDATI O'TGAN",
+  'Из нескольких партий': 'Bir nechta partiyadan', 'спишется по сроку: сначала ближайший': 'muddat bo\'yicha chiqariladi: avval eng yaqini',
+  'Без партии': 'Partiyasiz', 'без номера': 'raqamsiz', 'без партии': 'partiyasiz',
+  // приход
+  'Тип прихода': 'Kirim turi', 'Товар': 'Mahsulot', 'Номер партии': 'Partiya raqami', 'Введён вручную.': "Qo'lda kiritilgan.",
+  'Ввести номер партии': 'Partiya raqamini kiritish', 'Для этого товара ещё не было партий — введите номер с этикетки или накладной.': "Bu mahsulot uchun hali partiya bo'lmagan — yorliq yoki yuk xatidagi raqamni kiriting.",
+  'Дата производства': 'Ishlab chiqarilgan sana', 'Сегодня': 'Bugun', 'Вчера': 'Kecha', 'Позавчера': 'Oldingi kun', 'Другая дата:': 'Boshqa sana:',
+  'Количество': 'Miqdor', 'Сначала выберите товар.': 'Avval mahsulotni tanlang.', 'Откуда / поставщик': 'Qayerdan / yetkazib beruvchi',
+  'Другой…': 'Boshqa…', 'Не указывать': "Ko'rsatmaslik", 'Цена за единицу': 'Birlik narxi', 'Номер партии ': 'Partiya raqami',
+  'Как на этикетке или в накладной, например С-4': "Yorliq yoki yuk xatidagidek, masalan С-4",
+  // расход
+  'Тип расхода': 'Chiqim turi', 'Партия': 'Partiya', 'Доступно:': 'Mavjud:', 'Причина': 'Sabab', 'Кому': 'Kimga', 'Кому / причина': 'Kimga / sabab',
+  'Другое…': 'Boshqa…', 'Ввести…': 'Kiritish…', 'Брак и потери записываются отдельной строкой — причина обязательна.': "Brak va yo'qotishlar alohida qatorda yoziladi — sabab majburiy.",
+  // выпуск
+  'Загрузка': 'Yuklash', 'Выгрузка': 'Tushirish', 'Что получится (продукт)': 'Nima chiqadi (mahsulot)', 'Что фасуем (пачки)': 'Nimani qadoqlaymiz (qadoqlar)',
+  'Какое сырьё загружаем': 'Qaysi xomashyoni yuklaymiz', 'Из чего (сублимат)': 'Nimadan (sublimat)', 'Партия сырья': 'Xomashyo partiyasi',
+  'Сколько сырья загрузили': 'Qancha xomashyo yuklandi', 'Сколько сублимата взяли': 'Qancha sublimat olindi', 'Сколько пачек получили': 'Nechta qadoq chiqdi',
+  'Партия продукта': 'Mahsulot partiyasi', 'Введена вручную.': "Qo'lda kiritilgan.", 'Совпадает с партией сырья — так сохраняется прослеживаемость.': "Xomashyo partiyasi bilan bir xil — shunday qilib kuzatuvchanlik saqlanadi.",
+  'Брак при фасовке, кг': 'Qadoqlashdagi brak, kg', 'Брак, кг': 'Brak, kg',
+  'Вес после сушки вписывается потом: «Выпуск → ✅ Выгрузка», когда сублиматор закончит.': "Quritilgandan keyingi og'irlik keyin yoziladi: «Ishlab chiqarish → ✅ Tushirish», sublimator tugatganda.",
+  'Сейчас в сублиматоре ничего нет.': "Hozir sublimatorda hech narsa yo'q.", 'Загрузку оформляют во вкладке «⏳ Загрузка в сублиматор».': "Yuklash «⏳ Yuklash» bo'limida rasmiylashtiriladi.",
+  'Какую загрузку выгружаете': 'Qaysi yuklamani tushirasiz', 'Вес после сублимации (взвесьте без тары)': "Sublimatsiyadan keyingi og'irlik (idishsiz torting)",
+  // инвентаризация
+  'Посчитайте и введите факт по каждой партии': "Har bir partiya bo'yicha sanab, haqiqiy miqdorni kiriting", 'По учёту:': "Hisob bo'yicha:",
+  '= Совпадает с учётом': '= Hisob bilan mos', 'Совпадает': 'Mos keladi',
+  'Партии, по которым факт не введён, не изменятся. Если нашли партию, которой нет в списке, — сообщите руководителю.': "Fakt kiritilmagan partiyalar o'zgarmaydi. Ro'yxatda yo'q partiya topilsa — rahbarga xabar bering.",
+  'По этому товару нет партий с остатком. Если товар есть на складе — оформите его через «Приход».': "Bu mahsulot bo'yicha qoldig'i bor partiya yo'q. Mahsulot omborda bo'lsa — «Kirim» orqali rasmiylashtiring.",
+  // остатки и внимание
+  'Все': 'Hammasi', 'Показывать нулевые': "Nollarni ko'rsatish", 'Ничего не найдено': 'Hech narsa topilmadi',
+  'Ничего не найдено. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.': "Hech narsa topilmadi. Qoldig'i yo'q mahsulotlarni ko'rish uchun «Nollarni ko'rsatish»ni bosing.",
+  'Партий нет (упаковка или без номера)': "Partiya yo'q (qadoq yoki raqamsiz)", 'Проверки': 'Tekshiruvlar', 'Товары с проблемами': 'Muammoli mahsulotlar',
+  'Таких партий нет': "Bunday partiyalar yo'q", 'Проблем нет': "Muammo yo'q", 'Руководитель': 'Rahbar', 'Показать последние записи': "Oxirgi yozuvlarni ko'rsatish",
+  'Удалить': "O'chirish", 'Записей нет': "Yozuvlar yo'q",
+  'ок': 'ok', 'нет в наличии': 'mavjud emas', 'минус': 'minus', 'есть просрочка': "muddati o'tgani bor", 'срок < 30 дн': 'muddat < 30 kun', 'ниже минимума': 'minimumdan past',
+  'Товары с минусовым остатком': 'Qoldig\'i minus mahsulotlar', 'Партии с просроченным сроком': "Muddati o'tgan partiyalar", 'Партии со сроком < 30 дней': 'Muddati < 30 kun partiyalar',
+  'Товары ниже минимального запаса': 'Minimal zaxiradan past mahsulotlar', 'Выпуск: выход вне коридора / перевес на фасовке': "Ishlab chiqarish: chiqish koridordan tashqari / qadoqlashda ortiqcha og'irlik",
+  'Выпуск: выход ниже нормы / перевес на фасовке': "Ishlab chiqarish: chiqish me'yordan past / qadoqlashda ortiqcha og'irlik",
+  'Расход: нет причины / партии / не FEFO': "Chiqim: sabab / partiya yo'q / FEFO emas", 'Возможные дубли строк': 'Takroriy qatorlar ehtimoli',
+  'Партии «РАСХОЖДЕНИЕ» — пересчитать': '«РАСХОЖДЕНИЕ» partiyalari — qayta sanash',
+  'Сырьё': 'Xomashyo', 'Сублимат (кг)': 'Sublimat (kg)', 'ГП опт (кг)': 'Tayyor mahsulot, ulgurji (kg)', 'ГП фасованная (шт)': 'Tayyor mahsulot, qadoqlangan (dona)', 'Упаковка': 'Qadoq',
+  // вход
+  'Введите ПИН-код': 'PIN-kodni kiriting', 'Войти': 'Kirish', 'ПИН-код — тот же, что для подключения к боту. Спросите у руководителя.': "PIN-kod — botga ulanishdagi kod bilan bir xil. Rahbardan so'rang.",
+  'Кто вы?': 'Siz kimsiz?', 'Меня нет в списке — ввести имя': "Men ro'yxatda yo'qman — ismni kiritish", 'Ваше имя': 'Ismingiz', 'Нет доступа': "Ruxsat yo'q",
+  'Выйти из приложения на этом устройстве?': 'Bu qurilmada ilovadan chiqasizmi?',
+  // подтверждение и результат
+  'Проверьте перед записью': 'Yozishdan oldin tekshiring', '← Исправить': '← Tuzatish', '✓ Всё верно, записать': "✓ Hammasi to'g'ri, yozish",
+  'Проверить и записать →': 'Tekshirish va yozish →', 'НЕ ЗАПИСАНО': 'YOZILMADI', 'Исправьте и попробуйте снова.': "Tuzating va qaytadan urinib ko'ring.",
+  'ЗАПИСАНО': 'YOZILDI', 'Повторная отправка — дубль не создан.': 'Qayta yuborildi — takroriy yozuv yaratilmadi.', '↩ Отменить': '↩ Bekor qilish',
+  'Ещё одна': 'Yana bitta', 'На главную': 'Bosh sahifaga', 'Да, отменить': 'Ha, bekor qilish', '↩ Отменено': '↩ Bekor qilindi', 'Не получилось': "Bo'lmadi",
+  'Удалено': "O'chirildi", 'Не удалено': "O'chirilmadi", 'Операция': 'Amal', 'Останется': 'Qoladi', 'Откуда': 'Qayerdan', 'Цена / сумма': 'Narx / summa',
+  'Продукт': 'Mahsulot', 'Вес готового': "Tayyor mahsulot og'irligi", 'впишете при выгрузке': 'tushirishda yozasiz', 'Получили': 'Olindi', 'Из сырья': 'Xomashyodan',
+  'Проверка нормы': "Me'yor tekshiruvi", 'Загружено': 'Yuklangan', 'Вес после сушки': "Quritilgandan keyingi og'irlik", 'Выход': 'Chiqish',
+  '⏳ Загрузка в сублиматор': '⏳ Sublimatorga yuklash', '✅ Выгрузка из сублиматора': '✅ Sublimatordan tushirish', 'Выпуск · Фасовка': 'Ishlab chiqarish · Qadoqlash',
+  'Недостача будет записана в Расход с причиной «инвентаризация».': "Kamomad «Chiqim»ga «inventarizatsiya» sababi bilan yoziladi.",
+  // ошибки сервера
+  'Неверный ПИН-код.': "PIN-kod noto'g'ri.", 'Укажите номер партии.': 'Partiya raqamini kiriting.', 'Укажите партию продукта.': 'Mahsulot partiyasini kiriting.',
+  'Войдите по ПИН-коду.': 'PIN-kod bilan kiring.', 'Войдите заново по ПИН-коду.': 'PIN-kod bilan qaytadan kiring.',
+  'Нет доступа. Подключитесь в боте: /start ПИН-код': "Ruxsat yo'q. Botga ulaning: /start PIN-kod",
+  'Загрузка не найдена — возможно, её уже выгрузили. Обновите экран.': "Yuklama topilmadi — ehtimol allaqachon tushirilgan. Ekranni yangilang.",
+  'Нечего отменять (отмена доступна 15 минут после записи).': "Bekor qiladigan narsa yo'q (yozuvdan keyin 15 daqiqa ichida bekor qilish mumkin).",
+  'Неизвестное действие.': "Noma'lum amal.", 'Продукт и сырьё — один и тот же товар.': 'Mahsulot va xomashyo — bir xil tovar.',
+  'Сырья меньше, чем указано.': "Xomashyo ko'rsatilgandan kam.", 'Этого сырья нет на складе.': "Bu xomashyo omborda yo'q.", 'Неверный брак.': "Brak noto'g'ri.",
+  'Вес после сушки больше веса сырья — проверьте цифры.': "Quritilgandan keyingi og'irlik xomashyodan ko'p — raqamlarni tekshiring.",
+  'Количество больше остатка.': "Miqdor qoldiqdan ko'p.", 'Нет партий с остатком — расход невозможен.': "Qoldig'i bor partiya yo'q — chiqim mumkin emas.",
+  'Дата производства не может быть в будущем.': "Ishlab chiqarilgan sana kelajakda bo'lishi mumkin emas.",
+  'Фасовка оформляется сразу, без загрузки в сублиматор.': 'Qadoqlash sublimatorga yuklashsiz darhol rasmiylashtiriladi.'
+});
+const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya raqami', 'дата производства': 'ishlab chiqarilgan sana', 'количество': 'miqdor', 'причина': 'sabab',
+  'продукт': 'mahsulot', 'сырьё': 'xomashyo', 'сколько сырья': 'xomashyo miqdori', 'сколько пачек': 'qadoqlar soni', 'партия продукта': 'mahsulot partiyasi',
+  'загрузка': 'yuklama', 'вес после сублимации': "sublimatsiyadan keyingi og'irlik", 'факт хотя бы по одной партии': "kamida bitta partiya bo'yicha fakt"};
+const u = x => UNITS_UZ[x] || x, ty = x => TYPES_UZ[x] || x;
+const UZR = [
+  [/^([\d\s ,.−+-]+)\s(кг|шт|сум|дн|г|мин)$/, (m, n, un) => n + ' ' + u(un)],
+  [/^(.+) — ([\d\s ,.−-]+) (кг|шт)$/, (m, a, n, un) => a + ' — ' + n + ' ' + u(un)],
+  [/^Требует внимания: (\d+) провер\S+$/, (m, n) => 'Diqqat talab qiladi: ' + n + ' ta tekshiruv'],
+  [/^В сублиматоре: (\d+) загрузк\S+$/, (m, n) => 'Sublimatorda: ' + n + ' ta yuklama'],
+  [/^Последняя запись: (.+)$/, (m, x) => 'Oxirgi yozuv: ' + x],
+  [/^↩ Отменить последнюю запись \(ещё (\d+) мин\)$/, (m, n) => '↩ Oxirgi yozuvni bekor qilish (yana ' + n + ' daqiqa)'],
+  [/^Выгрузка \((\d+)\)$/, (m, n) => 'Tushirish (' + n + ')'],
+  [/^годен до (.+)$/, (m, d) => d + ' gacha yaroqli'],
+  [/^· годен до (.+)$/, (m, d) => '· ' + d + ' gacha yaroqli'],
+  [/^ближайший срок: (.+)$/, (m, d) => 'eng yaqin muddat: ' + d],
+  [/^срок (-?\d+) дн$/, (m, n) => 'muddat ' + n + ' kun'],
+  [/^Предложен по прошлой партии \((.+)\)\. Проверьте по накладной\/этикетке\.$/, (m, x) => "Oldingi partiya (" + x + ") bo'yicha taklif qilindi. Yuk xati yoki yorliq bo'yicha tekshiring."],
+  [/^Количество: (.+)$/, (m, x) => 'Miqdor: ' + x],
+  [/^Цена за 1 (.+)$/, (m, x) => '1 ' + u(x) + ' narxi'],
+  [/^Сумма: (.+) сум$/, (m, x) => 'Summa: ' + x + " so'm"],
+  [/^Осталось заполнить: (.+)$/, (m, x) => "To'ldirish kerak: " + x.split(', ').map(w => MISS_UZ[w] || w).join(', ')],
+  [/^Сервер не ответил за (\d+) секунд\.$/, (m, n) => 'Server ' + n + ' soniya ichida javob bermadi.'],
+  [/^Сервер ответил непонятно \(код (\d+)\)\.$/, (m, n) => "Server tushunarsiz javob berdi (kod " + n + ")."],
+  [/^Не по сроку \(FEFO\): есть партия (.+) со сроком до (.+)\. Берите её, если нет особой причины\.$/, (m, b, d) => "Muddat bo'yicha emas (FEFO): " + d + " gacha muddatli " + b + " partiya bor. Alohida sabab bo'lmasa, o'shani oling."],
+  [/^(Сырьё не по сроку|Не по сроку) \(FEFO\): есть партия (.+) до (.+)$/, (m, a, b, d) => (a[0] === 'С' ? 'Xomashyo ' : '') + "muddat bo'yicha emas (FEFO): " + d + ' gacha ' + b + ' partiya bor'],
+  [/^Столько нет\. Доступно (?:только )?(.+?)\.( .*)?$/, (m, x, rest) => "Bunchalik yo'q. Faqat " + x.replace(/ (кг|шт)$/, (q, un) => ' ' + u(un)) + ' mavjud.' + (rest ? " «Bir nechta partiyadan»ni tanlang." : '')],
+  [/^Столько сырья нет\. Доступно (.+)\.$/, (m, x) => "Bunchalik xomashyo yo'q. " + x.replace(/ (кг|шт)$/, (q, un) => ' ' + u(un)) + ' mavjud.'],
+  [/^Спишется: (.+)$/, (m, x) => 'Chiqariladi: ' + x],
+  [/^Сырьё: (.+)$/, (m, x) => 'Xomashyo: ' + x],
+  [/^Получено: (.+)$/, (m, x) => 'Olindi: ' + x],
+  [/^Вес готового: (.+)$/, (m, x) => "Tayyor mahsulot og'irligi: " + x],
+  [/^Факт: партия (.+)$/, (m, x) => 'Fakt: partiya ' + x],
+  [/^Факт: (.+)$/, (m, x) => 'Fakt: ' + x],
+  [/^(.+) · партия (.+)$/, (m, a, b) => a + ' · partiya ' + b],
+  [/^сырьё: (.+) — (.+) кг · загружено (.+?)( \((сегодня|(\d+) дн назад)\))?$/, (m, a, q, d, x, w, n) => 'xomashyo: ' + a + ' — ' + q + ' kg · yuklangan ' + d + (x ? (w === 'сегодня' ? ' (bugun)' : ' (' + n + ' kun oldin)') : '')],
+  [/^Выход: (.+?) · коридор не задан$/, (m, p) => 'Chiqish: ' + p + ' · koridor belgilanmagan'],
+  [/^Выход: (.+?) · в коридоре (.+)$/, (m, p, r) => 'Chiqish: ' + p + ' · koridorda ' + r],
+  [/^Выход: (.+?) — ⚠ ниже коридора (.+)\. Проверьте взвешивание \(тару\) и потери\.$/, (m, p, r) => "Chiqish: " + p + " — ⚠ koridordan past " + r + ". Tortish (idish) va yo'qotishlarni tekshiring."],
+  [/^Выход: (.+?) — ⚠ выше коридора (.+)\. Проверьте, досушен ли продукт\.$/, (m, p, r) => "Chiqish: " + p + " — ⚠ koridordan yuqori " + r + ". Mahsulot to'liq quritilganini tekshiring."],
+  [/^Вес 1 шт по факту: (.+?) г(.*)$/, (m, g, rest) => "1 dona haqiqiy og'irligi: " + g + ' g' + rest.replace(' — ⚠ больше нормы ', " — ⚠ me'yordan ko'p ").replace(' г (перевес)', ' g (ortiqcha)').replace(' · норма ', " · me'yor ").replace(' · норма не задана', " · me'yor belgilanmagan").replace(/ г$/, ' g')],
+  [/^Недостача (.+) (кг|шт)$/, (m, n, un) => 'Kamomad ' + n + ' ' + u(un)],
+  [/^Излишек (.+?) (кг|шт)(.*)$/, (m, n, un, rest) => 'Ortiqcha ' + n + ' ' + u(un) + (rest ? ' — ishlab chiqarish partiyasi bo\'yicha ortiqchani rahbar kiritadi' : '')],
+  [/^учёт (.+) → факт (.+?) (кг|шт)(?: · (совпадает|недостача (.+)|излишек (.+)))?$/, (m, a, b, un, s, n1, n2) => 'hisob ' + a + ' → fakt ' + b + ' ' + u(un) + (s ? (s === 'совпадает' ? ' · mos keladi' : n1 ? ' · kamomad ' + n1 : ' · ortiqcha ' + n2) : '')],
+  [/^Сроки годности меньше (\d+) дней$/, (m, n) => 'Yaroqlilik muddati ' + n + ' kundan kam'],
+  [/^Сроки (\d+)–60 дней$/, (m, n) => 'Muddat ' + n + '–60 kun'],
+  [/^партия (.+) · до (.+) · (просрочена|осталось (-?\d+) дн)$/, (m, b, d, s, n) => 'partiya ' + b + ' · ' + d + ' gacha · ' + (n == null ? "muddati o'tgan" : n + ' kun qoldi')],
+  [/^Партия (.+): (.+) · до (.+)$/, (m, b, q, d) => 'Partiya ' + b + ': ' + q.replace(/ (кг|шт)$/, (z, un) => ' ' + u(un)) + ' · ' + d + ' gacha'],
+  [/^: (.+) · до (.+?)$/, (m, q, d) => ': ' + q.replace(/ (кг|шт)$/, (z, un) => ' ' + u(un)) + ' · ' + d + ' gacha'],
+  [/^(\d+) дн$/, (m, n) => n + ' kun'],
+  [/^Удалить запись №(\d+)\?\n?(.*)$/s, (m, n, x) => n + "-yozuvni o'chirasizmi?\n" + x],
+  [/^Отменить последнюю запись\?\n?(.*)$/s, (m, x) => 'Oxirgi yozuvni bekor qilasizmi?\n' + x],
+  [/^(.+) — (\d+)$/, (m, a, n) => (UZ[a] || a) + ' — ' + n],
+  [/^Не хватает «(.+)»: на складе (.+), нужно (.+)\.$/, (m, a, b, c) => '«' + a + '» yetarli emas: omborda ' + b + ', kerak ' + c + '.'],
+  [/^В партии (.+) только (.+)\.$/, (m, a, b) => a + ' partiyada faqat ' + b + '.'],
+  [/^Партия «(.+)» товара «(.+)» не найдена или пуста\.$/, (m, a, b) => '«' + b + "» mahsulotining «" + a + "» partiyasi topilmadi yoki bo'sh."],
+  [/^Товар «(.+)» не найден в справочнике\.$/, (m, a) => '«' + a + "» ma'lumotnomada topilmadi."],
+  [/^Для «(.+)» обязательно укажите причину\.$/, (m, a) => '«' + ty(a) + '» uchun sababni albatta kiriting.'],
+  [/^Вес после сушки \((.+)\) больше веса сырья \((.+)\) — проверьте цифры\.$/, (m, a, b) => "Quritilgandan keyingi og'irlik (" + a + ") xomashyodan (" + b + ") ko'p — raqamlarni tekshiring."],
+  [/^Партия (.+?) этого продукта уже в сублиматоре\..*$/, (m, a) => a + ' partiya allaqachon sublimatorda. Uni tushiring yoki raqamini o\'zgartiring.'],
+  [/^Партия (.+) \(«(.+)»\) уже в сублиматоре\..*$/, (m, a, b) => a + ' partiya («' + b + "») allaqachon sublimatorda. Avval tushiring yoki boshqa raqam bering."],
+  [/^Партия (.+) просрочена — продавать нельзя\. Оформите «Списание \(срок\)»\.$/, (m, a) => a + " partiyaning muddati o'tgan — sotish mumkin emas. «Hisobdan chiqarish (muddat)»ni rasmiylashtiring."],
+  [/^Партия (.+)$/, (m, x) => 'Partiya ' + x],
+];
+// Фразы для многострочных ответов сервера (текст после записи)
+const PHR_UZ = [
+  ['После сушки откройте «Выпуск → Выгрузка» и впишите вес.', "Quritishdan keyin «Ishlab chiqarish → Tushirish»ni oching va og'irlikni yozing."],
+  ['⚠ Ниже минимального запаса — пора заказывать.', '⚠ Minimal zaxiradan past — buyurtma berish vaqti.'],
+  ['⏳ Загружено в сублиматор:', '⏳ Sublimatorga yuklandi:'], ['✅ Выгружено:', '✅ Tushirildi:'],
+  ['— проверьте взвешивание и потери', "— tortish va yo'qotishlarni tekshiring"], ['— проверьте, досушен ли продукт', "— mahsulot to'liq quritilganini tekshiring"],
+  ['(коридор не задан)', '(koridor belgilanmagan)'], ['(в коридоре ', '(koridorda '], [' ⚠ ниже коридора ', ' ⚠ koridordan past '], [' ⚠ выше коридора ', ' ⚠ koridordan yuqori '],
+  ['⚠ Не FEFO: есть партия ', '⚠ FEFO emas: partiya bor '], [' со сроком до ', ', muddati '], ['Вес 1 шт по факту:', "1 dona haqiqiy og'irligi:"],
+  ['Остаток теперь:', 'Endi qoldiq:'], ['Остаток:', 'Qoldiq:'], ['Списано сырья:', 'Chiqarilgan xomashyo:'], ['Сырьё было:', 'Xomashyo:'], ['Сырьё:', 'Xomashyo:'],
+  ['Партии:', 'Partiyalar:'], ['Выход:', 'Chiqish:'], ['Брак:', 'Brak:'], ['Сумма:', 'Summa:'], ['Инвентаризация:', 'Inventarizatsiya:'],
+  ['↩ Удалено строк:', "↩ O'chirilgan qatorlar:"], ['🗑 Удалено:', "🗑 O'chirildi:"], ['(лист «', '(«'], ['»).', '» varag\'i).'],
+  [', партия ', ', partiya '], ['партия ', 'partiya '], ['без партии', 'partiyasiz'], ['учёт ', 'hisob '], ['факт ', 'fakt '], ['недостача ', 'kamomad '], ['излишек ', 'ortiqcha '],
+  [' — совпадает', ' — mos keladi'], [' не внесён: партия из Выпуска, решает руководитель', ' kiritilmadi: ishlab chiqarish partiyasi, rahbar hal qiladi'],
+  [' кг', ' kg'], [' шт', ' dona'], [' сум', " so'm"]
+].concat(Object.keys(TYPES_UZ).sort((a, b) => b.length - a.length).map(k => [k, TYPES_UZ[k]]));
+
+function trText(s) {
+  if (UZ[s] != null) return UZ[s];
+  for (const [re, f] of UZR) { const m = s.match(re); if (m) return f(...m); }
+  return null;
+}
+function trCore(core, phrases) {
+  let r = trText(core);
+  if (r == null) { const p = core.match(/^([^А-Яа-яЁёA-Za-z«]+)([\s\S]+)$/); if (p) { const r2 = trText(p[2]); if (r2 != null) r = p[1] + r2; } }
+  if (r == null && core.includes(' · ')) { const parts = core.split(' · ').map(x => trCore(x, false) ?? x); if (parts.join(' · ') !== core) r = parts.join(' · '); }
+  if (r == null && phrases) { let x = core; PHR_UZ.forEach(([a, b]) => { x = x.split(a).join(b); }); if (x !== core) r = x; }
+  return r;
+}
+function trNode(t) {
+  const raw = t.nodeValue; if (!/[А-Яа-яЁё]/.test(raw)) return;
+  const m = raw.match(/^(\s*)([\s\S]*?)(\s*)$/);
+  const par = t.parentElement, phrases = !!(par && par.closest('.pre,.msg,.hint,.sub,h3'));
+  const r = trCore(m[2], phrases);
+  if (r != null && r !== m[2]) t.nodeValue = m[1] + r + m[3];
+}
+function translateTree(root) {
+  if (LANG !== 'uz' || !root) return;
+  if (root.nodeType === 3) return trNode(root);
+  const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); let n; const list = [];
+  while ((n = w.nextNode())) list.push(n);
+  list.forEach(trNode);
+  if (root.querySelectorAll) root.querySelectorAll('[placeholder]').forEach(el => { const r = trCore(el.placeholder.replace(/^🔍 /, ''), false); if (r) el.placeholder = '🔍 ' + r; });
+}
+new MutationObserver(ms => { if (LANG !== 'uz') return; ms.forEach(m => m.addedNodes.forEach(translateTree)); })
+  .observe(document.body, {childList: true, subtree: true});
+function setLang(l) {
+  LANG = l; ls('sklad_lang', l); document.documentElement.lang = l === 'uz' ? 'uz' : 'ru';
+  document.title = l === 'uz' ? 'SUB PROFI ombori' : CFG.APP_NAME;
+  render();
+}
 
 /* ---------------- связь с сервером ---------------- */
 async function api(action, data, id) {
@@ -269,7 +488,7 @@ function topBar() {
   const home = SCR === 'home' || SCR === 'login' || SCR === 'err';
   if (TG) { home ? TG.BackButton.hide() : TG.BackButton.show(); }
   return `<div class="top">${home || TG ? '' : '<button class="back" data-a="back">← Назад</button>'}
-    <h1>${esc(TITLES[SCR] || '')}</h1><div class="who">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
+    <h1>${esc(TITLES[SCR] || '')}</h1><button class="lang" data-a="lang" aria-label="Til / Язык">${LANG === 'uz' ? 'RU' : 'UZ'}</button><div class="who">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
 }
 function render() {
   const v = ({home: vHome, in: vIn, out: vOut, prod: vProd, stock: vStock, inv: vInv, attn: vAttn, login: vLogin, err: vErr})[SCR];
@@ -764,7 +983,8 @@ const ACT = {
   lname: i => loginStep(OPTS.names[+i]),
   lnew: () => textInput('Ваше имя', '', v => { if (v) loginStep(v); }),
   logout: async () => { if (!(await ask('Выйти из приложения на этом устройстве?', 'Выйти', 'Нет'))) return; try { await api('logout', {}); } catch (e) {} S.token = ''; ls('sklad_token', null); S.who = ''; go('login'); },
-  retry: () => start()
+  retry: () => start(),
+  lang: () => setLang(LANG === 'uz' ? 'ru' : 'uz')
 };
 document.addEventListener('click', e => {
   const k = e.target.closest('[data-kp]'); if (k && KP) { kpPress(k.dataset.kp); return; }
@@ -794,6 +1014,7 @@ async function start() {
   catch (e) { if (e.kind === 'auth') return; SCR = 'err'; F = {err: e.message}; render(); }
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
+document.documentElement.lang = LANG; if (LANG === 'uz') document.title = 'SUB PROFI ombori';
 start();
 </script>
 </body>
