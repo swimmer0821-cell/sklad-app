@@ -1,0 +1,561 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Код Коридор</title><style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:16px;background:#f5f5f7;color:#111}
+h1{font-size:22px}button{width:100%;font-size:24px;padding:22px;border:0;border-radius:14px;background:#0a7d32;color:#fff;font-weight:700}
+#st{font-size:20px;margin:14px 0;min-height:28px}textarea{width:100%;height:40vh;font:12px monospace;box-sizing:border-box}
+ol{font-size:17px;line-height:1.6}</style></head><body>
+<h1>Код для файла «Коридор»</h1>
+<button id="b">📋 Скопировать весь код</button><div id="st"></div>
+<ol><li>Нажмите зелёную кнопку — появится «✅ Скопировано».</li>
+<li>Apps Script → файл <b>Коридор</b> → нажмите в код → <b>Cmd+A</b> (или долгое нажатие → «Выбрать все») → <b>Cmd+V</b> / «Вставить».</li>
+<li>Сохранить (💾). Ошибок быть не должно.</li>
+<li>Начать развертывание → Управление развертываниями → ✏ → Новая версия → Развернуть.</li>
+<li>Отправьте боту <b>uz</b>.</li></ol>
+<p>Строк в коде: 542. Последняя строка: <code>}</code></p>
+<textarea id="t" readonly>/**
+ * ДОПОЛНЕНИЯ к приложению «Склад»:
+ *   1) коридор выхода при сублимации (Справочник: «Выход мин», «Выход макс»);
+ *   2) сублимация в два этапа: ЗАГРУЗКА (списываем сырьё) → ВЫГРУЗКА (вписываем вес готового).
+ * Файл «Коридор» должен стоять в списке файлов САМЫМ НИЖНИМ — его функции заменяют старые с тем же именем.
+ * После вставки: 1) один раз запустить setupSublimator();
+ *                2) Начать развертывание → Управление развертываниями → ✏ → Новая версия → Развернуть.
+ * Бот: команды «загрузка», «выгрузка», «сублиматор» (см. HELP_SUB ниже).
+ *
+ * Как хранится загрузка: строка на листе «Выпуск» с пустым «Кол-во» и примечанием «в сублиматоре».
+ * Сырьё списывается сразу при загрузке. При выгрузке в эту же строку вписывается вес и брак.
+ */
+
+const LOAD_MARK = &#x27;в сублиматоре&#x27;;
+
+// Запустить ОДИН раз (можно повторно — ничего не сломает).
+function setupSublimator() {
+  setupYieldCorridor();
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), prod = sheet_(SH.PROD), loc = ss.getSpreadsheetLocale();
+  ss.setSpreadsheetLocale(&#x27;en_US&#x27;); SpreadsheetApp.flush();
+  try {
+    arr_(prod, 20, &#x27;Статус&#x27;, &#x27;IF(C2:C=&quot;&quot;,&quot;&quot;,IF(ISNUMBER(SEARCH(&quot;&#x27; + LOAD_MARK + &#x27;&quot;,K2:K)),&quot;⏳ в сублиматоре&quot;,&#x27; +
+      &#x27;IF(R2:R=&quot;&quot;,&quot;↑ та же партия выше&quot;,IF(R2:R&lt;0,&quot;⛔ минус&quot;,IF(R2:R=0,&quot;израсходована&quot;,IF(S2:S=&quot;&quot;,&quot;ок&quot;,&#x27; +
+      &#x27;IF(S2:S&lt;0,&quot;⛔ просрочена&quot;,IF(S2:S&lt;=30,&quot;⚠ срок &lt; 30 дн&quot;,&quot;ок&quot;))))))))&#x27;);
+  } finally { SpreadsheetApp.flush(); ss.setSpreadsheetLocale(loc); SpreadsheetApp.flush(); }
+  const rules = prod.getConditionalFormatRules();
+  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextContains(&#x27;⏳&#x27;).setBackground(&#x27;#dbe8ff&#x27;).setRanges([prod.getRange(&#x27;T2:T3000&#x27;)]).build());
+  prod.setConditionalFormatRules(rules);
+  ss.toast(&#x27;Готово: коридор выхода и загрузка/выгрузка сублиматора.&#x27;, &#x27;Склад&#x27;, 10);
+}
+
+// ===================== КОРИДОР ВЫХОДА =====================
+// Справочник J «Выход мин», K «Выход макс». Пусто — «коридор не задан». Вызывается из setupSublimator().
+function setupYieldCorridor() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet(), ref = sheet_(SH.REF), prod = sheet_(SH.PROD);
+  ref.getRange(&#x27;H1&#x27;).setValue(&#x27;Норма выхода (ориентир)&#x27;);
+  ref.getRange(&#x27;J1:K1&#x27;).setValues([[&#x27;Выход мин&#x27;, &#x27;Выход макс&#x27;]]).setFontWeight(&#x27;bold&#x27;).setFontColor(&#x27;#ffffff&#x27;)
+     .setBackground(&#x27;#bf9000&#x27;).setWrap(true).setVerticalAlignment(&#x27;middle&#x27;);
+  ref.setColumnWidths(10, 2, 90);
+  ref.getRange(&#x27;J2:K&#x27;).setNumberFormat(&#x27;0.0%&#x27;);
+  ref.getRange(&#x27;J2:K1000&#x27;).setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 1)
+     .setAllowInvalid(false).setHelpText(&#x27;Процент выхода, например 55%&#x27;).build());
+  const REF = &quot;&#x27;&quot; + SH.REF + &quot;&#x27;&quot;;
+  const LO = &#x27;IFERROR(VLOOKUP(C2:C,&#x27; + REF + &#x27;!B:J,9,0),&quot;&quot;)&#x27;, HI = &#x27;IFERROR(VLOOKUP(C2:C,&#x27; + REF + &#x27;!B:K,10,0),&quot;&quot;)&#x27;;
+  const loc = ss.getSpreadsheetLocale();
+  ss.setSpreadsheetLocale(&#x27;en_US&#x27;); SpreadsheetApp.flush();
+  try {
+    // N «Норма»: для фасовки — вес 1 шт, для сублимации — коридор текстом «55%–60%»
+    arr_(prod, 14, &#x27;Норма&#x27;, &#x27;IF(C2:C=&quot;&quot;,&quot;&quot;,IF(B2:B=&quot;Фасовка&quot;,IFERROR(VLOOKUP(C2:C,&#x27; + REF + &#x27;!B:G,6,0),&quot;&quot;),&#x27; +
+      &#x27;IF((&#x27; + LO + &#x27;=&quot;&quot;)*(&#x27; + HI + &#x27;=&quot;&quot;),&quot;&quot;,IF(&#x27; + LO + &#x27;=&quot;&quot;,&quot;?&quot;,TEXT(&#x27; + LO + &#x27;,&quot;0%&quot;))&amp;&quot;–&quot;&amp;IF(&#x27; + HI + &#x27;=&quot;&quot;,&quot;?&quot;,TEXT(&#x27; + HI + &#x27;,&quot;0%&quot;)))))&#x27;);
+    // O «Проверка нормы»
+    arr_(prod, 15, &#x27;Проверка нормы&#x27;, &#x27;IF(M2:M=&quot;&quot;,&quot;&quot;,IF(B2:B=&quot;Фасовка&quot;,IF(N2:N=&quot;&quot;,&quot;норма не задана&quot;,&#x27; +
+      &#x27;IF(M2:M&gt;N2:N*1.01,&quot;⚠ перевес: &quot;&amp;ROUND(M2:M,1)&amp;&quot; г на шт&quot;,&quot;ок&quot;)),&#x27; +
+      &#x27;IF((&#x27; + LO + &#x27;=&quot;&quot;)*(&#x27; + HI + &#x27;=&quot;&quot;),&quot;коридор не задан&quot;,&#x27; +
+      &#x27;IF((&#x27; + LO + &#x27;&lt;&gt;&quot;&quot;)*(M2:M&lt;IFERROR(--&#x27; + LO + &#x27;,0)),&quot;⚠ выход &quot;&amp;TEXT(M2:M,&quot;0.0%&quot;)&amp;&quot; ниже коридора&quot;,&#x27; +
+      &#x27;IF((&#x27; + HI + &#x27;&lt;&gt;&quot;&quot;)*(M2:M&gt;IFERROR(--&#x27; + HI + &#x27;,9)),&quot;⚠ выход &quot;&amp;TEXT(M2:M,&quot;0.0%&quot;)&amp;&quot; выше коридора — недосушка?&quot;,&quot;ок&quot;)))))&#x27;);
+    // проценты для сублимации, граммы для фасовки
+    prod.getRange(&#x27;M2:N&#x27;).setNumberFormat(&#x27;[&lt;1]0.0%;0.0&quot; г&quot;&#x27;);
+  } finally {
+    SpreadsheetApp.flush(); ss.setSpreadsheetLocale(loc); SpreadsheetApp.flush();
+  }
+  sheet_(SH.DASH).getRange(&#x27;A9&#x27;).setValue(&#x27;Выпуск: выход вне коридора / перевес на фасовке&#x27;);
+}
+
+function corridor_(name) {
+  const r = sheet_(SH.REF).getRange(&#x27;B2:K&#x27;).getValues().find(x =&gt; x[0] === name);
+  return {min: r &amp;&amp; typeof r[8] === &#x27;number&#x27; ? r[8] : null, max: r &amp;&amp; typeof r[9] === &#x27;number&#x27; ? r[9] : null};
+}
+function yieldMsg_(y, c) {
+  const p = v =&gt; (v * 100).toFixed(1).replace(&#x27;.&#x27;, &#x27;,&#x27;) + &#x27;%&#x27;;
+  const range = (c.min !== null ? p(c.min) : &#x27;?&#x27;) + &#x27;–&#x27; + (c.max !== null ? p(c.max) : &#x27;?&#x27;);
+  if (c.min === null &amp;&amp; c.max === null) return &#x27; (коридор не задан)&#x27;;
+  if (c.min !== null &amp;&amp; y &lt; c.min) return &#x27; ⚠ ниже коридора &#x27; + range + &#x27; — проверьте взвешивание и потери&#x27;;
+  if (c.max !== null &amp;&amp; y &gt; c.max) return &#x27; ⚠ выше коридора &#x27; + range + &#x27; — проверьте, досушен ли продукт&#x27;;
+  return &#x27; (в коридоре &#x27; + range + &#x27;)&#x27;;
+}
+
+// Замена cmdProd_ из основного файла: проверка выхода по коридору вместо одной нормы.
+function cmdProd_(arg, who, chat) {
+  const p = parts_(arg);
+  if (p.length &lt; 5) throw new Error(&#x27;Формат: выпуск Продукт; кол-во; партия; из чего; кол-во сырья; [партия сырья]; [брак кг]&#x27;);
+  const prod = findItem_(p[0]), q = num_(p[1], &#x27;кол-во&#x27;), batch = p[2];
+  if (!batch) throw new Error(&#x27;Укажите партию продукта.&#x27;);
+  const raw = findItem_(p[3]), rq = num_(p[4], &#x27;кол-во сырья&#x27;);
+  const brak = p[6] ? num_(p[6], &#x27;брак&#x27;) : &#x27;&#x27;;
+  const type = prod.group === &#x27;ГП фасованная (шт)&#x27; ? &#x27;Фасовка&#x27; : &#x27;Сублимация&#x27;;
+  let alloc;
+  try { alloc = allocate_(raw.name, rq, p[5] || &#x27;&#x27;); }
+  catch (e) { if ((stockOf_(raw.name) || {}).qty &gt;= rq &amp;&amp; !p[5]) alloc = {parts: [{batch: &#x27;&#x27;, qty: rq}], warn: &#x27;&#x27;}; else throw e; }
+  const rows = alloc.parts.map((x, i) =&gt; [new Date(), type, prod.name, batch, i === 0 ? q : 0, raw.name, x.batch, x.qty, i === 0 ? brak : &#x27;&#x27;, who, &#x27;через бота&#x27;]);
+  if (rows.length &gt; 1) rows.forEach(r =&gt; r[4] = r3_(q * r[7] / rq)); // выход делим пропорционально сырью
+  append_(SH.PROD, rows, chat); SpreadsheetApp.flush();
+  let check = &#x27;&#x27;;
+  if (type === &#x27;Фасовка&#x27;) {
+    const g = rq * 1000 / q;
+    check = &#x27;\nВес 1 шт по факту: &#x27; + g.toFixed(1) + &#x27; г&#x27;;
+    const norm = sheet_(SH.REF).getRange(&#x27;B2:G&#x27;).getValues().find(r =&gt; r[0] === prod.name);
+    if (norm &amp;&amp; norm[5] &amp;&amp; g &gt; norm[5] * 1.01) check += &#x27; ⚠ норма &#x27; + norm[5] + &#x27; г — перевес&#x27;;
+  } else {
+    const y = q / rq;
+    check = &#x27;\nВыход: &#x27; + (y * 100).toFixed(1).replace(&#x27;.&#x27;, &#x27;,&#x27;) + &#x27;%&#x27; + yieldMsg_(y, corridor_(prod.name));
+  }
+  return &#x27;✅ &#x27; + type + &#x27;: &#x27; + prod.name + &#x27; — &#x27; + q + &#x27; &#x27; + prod.unit + &#x27;, партия &#x27; + batch +
+    &#x27;\nСписано сырья: &#x27; + raw.name + &#x27; &#x27; + rq + &#x27; &#x27; + raw.unit + &#x27; (&#x27; + alloc.parts.map(x =&gt; (x.batch || &#x27;без партии&#x27;) + &#x27;: &#x27; + x.qty).join(&#x27;, &#x27;) + &#x27;)&#x27; +
+    check + alloc.warn;
+}
+
+
+// ===================== СУБЛИМАЦИЯ В ДВА ЭТАПА =====================
+// Что сейчас в сублиматоре (строки «Выпуска» с пометкой «в сублиматоре»)
+function loads_() {
+  const v = sheet_(SH.PROD).getRange(&#x27;A2:K&#x27;).getValues(), m = {}, order = [], today = new Date();
+  v.forEach(r =&gt; {
+    if (!r[2] || String(r[10]).indexOf(LOAD_MARK) !== 0) return;
+    const k = r[2] + &#x27;|&#x27; + r[3];
+    if (!m[k]) { m[k] = {item: String(r[2]), batch: String(r[3]), raw: String(r[5]), rq: 0, parts: [], date: r[0] instanceof Date ? r[0] : null, who: String(r[9])}; order.push(k); }
+    m[k].rq = r3_(m[k].rq + (Number(r[7]) || 0));
+    m[k].parts.push((r[6] ? String(r[6]) : &#x27;без партии&#x27;) + &#x27;: &#x27; + r[7]);
+  });
+  return order.map(k =&gt; { const x = m[k]; return {item: x.item, batch: x.batch, raw: x.raw, rq: x.rq, parts: x.parts.join(&#x27;, &#x27;),
+    date: x.date ? fmtD_(x.date) : &#x27;&#x27;, days: x.date ? Math.floor((today - x.date) / 864e5) : null, who: x.who}; });
+}
+
+// ЗАГРУЗКА: сырьё списывается сразу (по FEFO или выбранной партии), вес готового — потом
+function apiLoad_(d, me) {
+  const prod = findItem_(d.item), raw = findItem_(d.raw), rq = num_(d.rawQty, &#x27;кол-во сырья&#x27;), batch = String(d.batch || &#x27;&#x27;).trim();
+  if (!batch) throw new Error(&#x27;Укажите партию продукта.&#x27;);
+  if (prod.group === &#x27;ГП фасованная (шт)&#x27;) throw new Error(&#x27;Фасовка оформляется сразу, без загрузки в сублиматор.&#x27;);
+  if (prod.name === raw.name) throw new Error(&#x27;Продукт и сырьё — один и тот же товар.&#x27;);
+  if (loads_().some(x =&gt; x.item === prod.name &amp;&amp; x.batch === batch))
+    throw new Error(&#x27;Партия &#x27; + batch + &#x27; («&#x27; + prod.name + &#x27;») уже в сублиматоре. Сначала выгрузите её или дайте другой номер, например &#x27; + batch + &#x27;/2.&#x27;);
+  let alloc;
+  try { alloc = allocate_(raw.name, rq, d.rawBatch || &#x27;&#x27;); }
+  catch (e) { if ((stockOf_(raw.name) || {}).qty &gt;= rq &amp;&amp; !d.rawBatch) alloc = {parts: [{batch: &#x27;&#x27;, qty: rq}], warn: &#x27;&#x27;}; else throw e; }
+  const rows = alloc.parts.map(x =&gt; [new Date(), &#x27;Сублимация&#x27;, prod.name, batch, &#x27;&#x27;, raw.name, x.batch, x.qty, &#x27;&#x27;, me.who, LOAD_MARK + &#x27; · через бота&#x27;]);
+  append_(SH.PROD, rows, me.chat); SpreadsheetApp.flush();
+  return &#x27;⏳ Загружено в сублиматор: &#x27; + prod.name + &#x27;, партия &#x27; + batch +
+    &#x27;\nСырьё: &#x27; + raw.name + &#x27; — &#x27; + rq + &#x27; &#x27; + raw.unit + &#x27; (&#x27; + alloc.parts.map(x =&gt; (x.batch || &#x27;без партии&#x27;) + &#x27;: &#x27; + x.qty).join(&#x27;, &#x27;) + &#x27;)&#x27; +
+    &#x27;\nПосле сушки откройте «Выпуск → Выгрузка» и впишите вес.&#x27; + alloc.warn;
+}
+
+// ВЫГРУЗКА: вписываем фактический вес готового продукта (и брак), выход считается и проверяется по коридору
+function apiUnload_(d, me) {
+  const prod = findItem_(d.item), batch = String(d.batch || &#x27;&#x27;), q = num_(d.qty, &#x27;вес после сублимации&#x27;);
+  const brak = String(d.brak || &#x27;&#x27;).trim() ? num_(d.brak, &#x27;брак&#x27;) : &#x27;&#x27;;
+  const sh = sheet_(SH.PROD), v = sh.getRange(&#x27;A2:K&#x27;).getValues(), idx = [];
+  v.forEach((r, i) =&gt; { if (r[2] === prod.name &amp;&amp; String(r[3]).toLowerCase() === batch.toLowerCase() &amp;&amp; String(r[10]).indexOf(LOAD_MARK) === 0) idx.push(i); });
+  if (!idx.length) throw new Error(&#x27;Загрузка не найдена — возможно, её уже выгрузили. Обновите экран.&#x27;);
+  const rq = idx.reduce((s, i) =&gt; s + (Number(v[i][7]) || 0), 0);
+  if (!(rq &gt; 0)) throw new Error(&#x27;У загрузки не указан вес сырья — исправьте строку в листе «Выпуск».&#x27;);
+  if (q &gt; rq) throw new Error(&#x27;Вес после сушки (&#x27; + q + &#x27;) больше веса сырья (&#x27; + r3_(rq) + &#x27;) — проверьте цифры.&#x27;);
+  const note = &#x27;через бота · загрузка &#x27; + fmtD_(v[idx[0]][0]) + &#x27; · выгрузка &#x27; + fmtD_(new Date()) + &#x27; (&#x27; + me.who + &#x27;)&#x27;;
+  let rest = q;
+  idx.forEach((i, k) =&gt; {
+    const part = k === idx.length - 1 ? r3_(rest) : r3_(q * (Number(v[i][7]) || 0) / rq);
+    rest -= part;
+    sh.getRange(i + 2, 5).setValue(part);
+    if (k === 0 &amp;&amp; brak !== &#x27;&#x27;) sh.getRange(i + 2, 9).setValue(brak);
+    sh.getRange(i + 2, 11).setValue(note);
+  });
+  CacheService.getScriptCache().remove(&#x27;undo_&#x27; + me.chat); // выгрузку исправляет руководитель
+  SpreadsheetApp.flush();
+  const y = q / rq;
+  return &#x27;✅ Выгружено: &#x27; + prod.name + &#x27; — &#x27; + q + &#x27; &#x27; + prod.unit + &#x27;, партия &#x27; + v[idx[0]][3] +
+    &#x27;\nСырьё было: &#x27; + r3_(rq) + &#x27; кг&#x27; + (brak !== &#x27;&#x27; ? &#x27;\nБрак: &#x27; + brak + &#x27; кг&#x27; : &#x27;&#x27;) +
+    &#x27;\nВыход: &#x27; + (y * 100).toFixed(1).replace(&#x27;.&#x27;, &#x27;,&#x27;) + &#x27;%&#x27; + yieldMsg_(y, corridor_(prod.name));
+}
+
+// Замена api_ из «МиниПриложения»: добавлены действия load и unload.
+function api_(b) {
+  try {
+    const a = b.action, d = b.data || {};
+    if (a === &#x27;login&#x27;) return login_(d);
+    const me = auth_(b);
+    if (a === &#x27;logout&#x27;) { if (b.token) { const T = tokens_(); delete T[b.token]; saveTokens_(T); } return {ok: true}; }
+
+    // --- чтение ---
+    if (a === &#x27;init&#x27;) return {ok: true, data: appData_(me)};
+    if (a === &#x27;batches&#x27;) return {ok: true, data: batchList_(String(d.name || &#x27;&#x27;))};
+    if (a === &#x27;last&#x27;) {
+      cmdLast_(me.chat, String(d.n || 15));
+      const list = JSON.parse(CacheService.getScriptCache().get(&#x27;last_&#x27; + me.chat) || &#x27;[]&#x27;);
+      return {ok: true, data: list.map(x =&gt; x.text)};
+    }
+
+    // --- запись: защита от дублей по номеру запроса ---
+    const cache = CacheService.getScriptCache(), rk = b.rid ? &#x27;rid_&#x27; + String(b.rid).slice(0, 60) : &#x27;&#x27;;
+    if (rk &amp;&amp; cache.get(rk)) return Object.assign(JSON.parse(cache.get(rk)), {dup: true, stock: stockRows_()});
+    const lock = LockService.getScriptLock(); lock.waitLock(25000);
+    try {
+      if (rk &amp;&amp; cache.get(rk)) return Object.assign(JSON.parse(cache.get(rk)), {dup: true, stock: stockRows_()});
+      let t, undo = true;
+      if (a === &#x27;in&#x27;) t = apiIn_(d, me);
+      else if (a === &#x27;prod&#x27;) t = cmdProd_(join_([d.item, d.qty, d.batch, d.raw, d.rawQty, d.rawBatch, d.brak]), me.who, me.chat);
+      else if (a === &#x27;out&#x27;) t = cmdOut_(join_([d.type, d.item, d.qty, d.reason, d.batch]), me.who, me.chat, null);
+      else if (a === &#x27;load&#x27;) t = apiLoad_(d, me);
+      else if (a === &#x27;unload&#x27;) { t = apiUnload_(d, me); undo = false; }
+      else if (a === &#x27;inv&#x27;) { t = apiInv_(d, me); undo = false; }
+      else if (a === &#x27;undo&#x27;) { t = cmdUndo_(me.chat); undo = false; }
+      else if (a === &#x27;del&#x27;) { t = cmdDelete_(me.chat, String(d.n)); undo = false; }
+      else throw new Error(&#x27;Неизвестное действие.&#x27;);
+      SpreadsheetApp.flush();
+      const res = {ok: true, text: String(t).replace(/\*/g, &#x27;&#x27;), undo: undo};
+      if (rk) cache.put(rk, JSON.stringify(res), 1800);
+      res.stock = stockRows_(); res.loads = loads_();
+      return res;
+    } finally { lock.releaseLock(); }
+  } catch (err) {
+    const r = {ok: false, error: err.message};
+    if (err.auth) r.auth = false;
+    return r;
+  }
+}
+
+// Замена appData_: передаёт коридор выхода и список загрузок в сублиматоре.
+function appData_(me) {
+  const items = sheet_(SH.REF).getRange(&#x27;A2:K&#x27;).getValues().filter(r =&gt; r[1]).map(r =&gt; ({
+    n: String(r[1]), g: r[2], u: r[3], w: r[6] === &#x27;&#x27; ? null : r[6],
+    ymin: typeof r[9] === &#x27;number&#x27; ? r[9] : null, ymax: typeof r[10] === &#x27;number&#x27; ? r[10] : null
+  }));
+  const checks = sheet_(SH.DASH).getRange(&#x27;A5:B12&#x27;).getValues().map(r =&gt; ({t: r[0], n: r[1]}));
+  const lastBatch = {};
+  sheet_(SH.IN).getRange(&#x27;C2:D&#x27;).getValues().forEach(r =&gt; { if (r[0] &amp;&amp; r[1] &amp;&amp; r[1] !== &#x27;РАСХОЖДЕНИЕ&#x27;) lastBatch[r[0]] = String(r[1]); });
+  sheet_(SH.PROD).getRange(&#x27;C2:D&#x27;).getValues().forEach(r =&gt; { if (r[0] &amp;&amp; r[1]) lastBatch[r[0]] = String(r[1]); });
+  const from = [], to = {};
+  sheet_(SH.IN).getRange(&#x27;G2:I&#x27;).getValues().reverse().forEach(r =&gt; {
+    const v = String(r[0]).trim();
+    if (v &amp;&amp; r[2] !== &#x27;перенос из старых файлов&#x27; &amp;&amp; from.indexOf(v) &lt; 0 &amp;&amp; from.length &lt; 12) from.push(v);
+  });
+  sheet_(SH.OUT).getRange(&#x27;B2:F&#x27;).getValues().reverse().forEach(r =&gt; {
+    const t = r[0], v = String(r[4]).trim(); if (!t || !v || v.indexOf(&#x27;инвентаризация&#x27;) === 0) return;
+    to[t] = to[t] || []; if (to[t].indexOf(v) &lt; 0 &amp;&amp; to[t].length &lt; 12) to[t].push(v);
+  });
+  return {who: me.who, admin: me.admin, items: items, stock: stockRows_(), checks: checks, expiry: expiryList_(60),
+          lastBatch: lastBatch, recent: {from: from, to: to}, loads: loads_(),
+          types: {in: TYPES_IN, out: TYPES_OUT}, groups: GROUPS};
+}
+
+// ===================== БОТ: ЗАГРУЗКА / ВЫГРУЗКА =====================
+const HELP_SUB = &#x27;\n\n⏳ *Сублиматор*\n&#x27; +
+  &#x27;*загрузка* Продукт; партия; сырьё; кг сырья; [партия сырья]\n&#x27; +
+  &#x27;  загрузка Курт сублимированный; К-3; Курт (сырьё); 12\n&#x27; +
+  &#x27;*выгрузка* Продукт; партия; кг готового; [брак кг]\n&#x27; +
+  &#x27;  выгрузка Курт сублимированный; К-3; 7,8\n&#x27; +
+  &#x27;  если в сублиматоре одна загрузка — можно просто: выгрузка 7,8\n&#x27; +
+  &#x27;*сублиматор* — что сейчас загружено&#x27;;
+
+function listLoads_() {
+  const L = loads_();
+  if (!L.length) return &#x27;✅ Сублиматор пуст — загрузок нет.&#x27;;
+  return &#x27;⏳ В сублиматоре (&#x27; + L.length + &#x27;):\n&#x27; + L.map((x, i) =&gt; (i + 1) + &#x27;. &#x27; + x.item + &#x27; · партия &#x27; + x.batch +
+    &#x27;\n   сырьё: &#x27; + x.raw + &#x27; &#x27; + x.rq + &#x27; кг · загружено &#x27; + x.date + (x.days != null ? &#x27; (&#x27; + x.days + &#x27; дн)&#x27; : &#x27;&#x27;) +
+    &#x27;\n   выгрузка &#x27; + x.item + &#x27;; &#x27; + x.batch + &#x27;; ВЕС&#x27;).join(&#x27;\n&#x27;) + &#x27;\n\nВместо ВЕС впишите кг после сушки.&#x27;;
+}
+function cmdLoad_(arg, who, chat) {
+  const p = parts_(arg);
+  if (p.length &lt; 4 || !p[0]) throw new Error(&#x27;Формат: загрузка Продукт; партия; сырьё; кг сырья; [партия сырья]\nПример: загрузка Курт сублимированный; К-3; Курт (сырьё); 12&#x27;);
+  return apiLoad_({item: p[0], batch: p[1], raw: p[2], rawQty: p[3], rawBatch: p[4] || &#x27;&#x27;}, {who: who, chat: chat});
+}
+function cmdUnload_(arg, who, chat) {
+  const p = parts_(arg).filter(x =&gt; x !== &#x27;&#x27;), L = loads_();
+  if (!p.length) return listLoads_();
+  if (p.length &lt;= 2 &amp;&amp; !isNaN(parseFloat(String(p[0]).replace(&#x27;,&#x27;, &#x27;.&#x27;)))) { // «выгрузка 7,8» — когда загрузка одна
+    if (L.length !== 1) throw new Error(L.length ? &#x27;В сублиматоре &#x27; + L.length + &#x27; загрузки — укажите какую.\n\n&#x27; + listLoads_() : &#x27;Сублиматор пуст.&#x27;);
+    return apiUnload_({item: L[0].item, batch: L[0].batch, qty: p[0], brak: p[1] || &#x27;&#x27;}, {who: who, chat: chat});
+  }
+  if (p.length &lt; 3) throw new Error(&#x27;Формат: выгрузка Продукт; партия; кг готового; [брак кг]\n\n&#x27; + listLoads_());
+  return apiUnload_({item: p[0], batch: p[1], qty: p[2], brak: p[3] || &#x27;&#x27;}, {who: who, chat: chat});
+}
+
+// Замена handle_ из основного файла: добавлены «загрузка», «выгрузка», «сублиматор».
+function handle_(msg) {
+  const chat = String(msg.chat.id), text = msg.text.trim();
+  const users = users_();
+  if (/^\/start/i.test(text)) {
+    const pin = (text.split(/\s+/)[1] || &#x27;&#x27;).trim();
+    if (users[chat]) return send_(chat, &#x27;Вы уже подключены.\n\n&#x27; + HELP + HELP_SUB);
+    if (pin &amp;&amp; pin === String(props_().getProperty(&#x27;PIN&#x27;)).trim()) {
+      users[chat] = msg.from.first_name || (&#x27;user&#x27; + chat);
+      props_().setProperty(&#x27;USERS&#x27;, JSON.stringify(users));
+      return send_(chat, &#x27;✅ Подключено: &#x27; + users[chat] + &#x27;\n\n&#x27; + HELP + HELP_SUB);
+    }
+    return send_(chat, &#x27;Чтобы подключиться, отправьте: /start ПИН-код (спросите у руководителя).&#x27;);
+  }
+  if (!users[chat]) return send_(chat, &#x27;Нет доступа. Отправьте /start ПИН-код.&#x27;);
+  if (/^\/admin/i.test(text)) {
+    const code = (text.split(/\s+/)[1] || &#x27;&#x27;).trim(), ap = String(props_().getProperty(&#x27;ADMIN_PIN&#x27;) || &#x27;&#x27;).trim();
+    if (ap &amp;&amp; code === ap) {
+      const a = admins_(); a[chat] = users[chat]; props_().setProperty(&#x27;ADMINS&#x27;, JSON.stringify(a));
+      return send_(chat, &#x27;✅ Вы руководитель.&#x27; + HELP_ADMIN);
+    }
+    return send_(chat, &#x27;Неверный код руководителя.&#x27;);
+  }
+  const who = users[chat];
+  const m = text.match(/^\/?(\S+)\s*([\s\S]*)$/);
+  const cmd = m[1].toLowerCase().replace(&#x27;ё&#x27;, &#x27;е&#x27;), arg = m[2];
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    let reply;
+    switch (cmd) {
+      case &#x27;приход&#x27;: reply = cmdIn_(arg, who, chat); break;
+      case &#x27;выпуск&#x27;: case &#x27;фасовка&#x27;: case &#x27;сублимация&#x27;: reply = cmdProd_(arg, who, chat); break;
+      case &#x27;загрузка&#x27;: reply = cmdLoad_(arg, who, chat); break;
+      case &#x27;выгрузка&#x27;: reply = cmdUnload_(arg, who, chat); break;
+      case &#x27;сублиматор&#x27;: reply = listLoads_(); break;
+      case &#x27;расход&#x27;: reply = cmdOut_(arg, who, chat, null); break;
+      case &#x27;брак&#x27;: reply = cmdOut_(arg, who, chat, &#x27;Брак&#x27;); break;
+      case &#x27;остаток&#x27;: case &#x27;остатки&#x27;: reply = cmdStock_(arg); break;
+      case &#x27;сроки&#x27;: reply = cmdExpiry_(60); break;
+      case &#x27;отчет&#x27;: reply = report_(); break;
+      case &#x27;отмена&#x27;: reply = cmdUndo_(chat); break;
+      case &#x27;последние&#x27;: reply = cmdLast_(chat, arg); break;
+      case &#x27;удалить&#x27;: reply = cmdDelete_(chat, arg); break;
+      case &#x27;помощь&#x27;: case &#x27;help&#x27;: reply = HELP + HELP_SUB + (admins_()[chat] ? HELP_ADMIN : &#x27;&#x27;); break;
+      default: reply = &#x27;Не понял команду. Напишите «помощь».&#x27;;
+    }
+    send_(chat, reply);
+  } catch (err) {
+    send_(chat, &#x27;⚠ &#x27; + err.message);
+  } finally { lock.releaseLock(); }
+}
+
+// ===================== БОТ НА УЗБЕКСКОМ (латиница) =====================
+// Команды: «uz» — узбекский, «ru» — русский. Язык запоминается для каждого человека.
+// Все ответы бота переводятся перед отправкой. В таблицу всё пишется по-русски, как раньше.
+
+function langs_() { return JSON.parse(props_().getProperty(&#x27;LANGS&#x27;) || &#x27;{}&#x27;); }
+function langOf_(chat) { return langs_()[String(chat)] || &#x27;ru&#x27;; }
+function setLang_(chat, l) { const L = langs_(); L[String(chat)] = l; props_().setProperty(&#x27;LANGS&#x27;, JSON.stringify(L)); }
+
+const HELP_UZ =
+&#x27;📦 *Ombor — buyruqlar* (maydonlar «;» bilan)\n\n&#x27; +
+&#x27;*kirim* Mahsulot; miqdor; partiya; ishlab chiqarilgan sana; qayerdan\n&#x27; +
+&#x27;  kirim Сулугуни (сырьё); 50; С-4; 08.10.2026; Деревенское\n\n&#x27; +
+&#x27;*chiqim* Tur; mahsulot; miqdor; kimga/sabab; [partiya]\n&#x27; +
+&#x27;  chiqim jonatish; Курт 30 г; 200; Баходыр\n&#x27; +
+&#x27;  Turlar: jonatish, sotuv, marketpleys, namuna, brak, yoqotish, hisobdan, qaytarish\n\n&#x27; +
+&#x27;*brak* Mahsulot; miqdor; sabab; [partiya]\n\n&#x27; +
+&#x27;*qadoqlash* Mahsulot; miqdor; partiya; nimadan; xomashyo miqdori; [xomashyo partiyasi]; [brak kg]\n&#x27; +
+&#x27;  qadoqlash Сулугуни 50 г; 400; С-4; Сулугуни сублимированный; 20,4\n\n&#x27; +
+&#x27;*qoldiq* nomining bir qismi — qoldiq va partiyalar\n&#x27; +
+&#x27;*muddat* — muddati 60 kundan kam partiyalar\n&#x27; +
+&#x27;*hisobot* — dashboard tekshiruvlari\n&#x27; +
+&#x27;*bekor* — oxirgi yozuvingizni o\&#x27;chirish (15 daqiqa ichida)\n&#x27; +
+&#x27;*ru* — русский язык\n\n&#x27; +
+&#x27;⏳ *Sublimator*\n&#x27; +
+&#x27;*yuklash* Mahsulot; partiya; xomashyo; xomashyo kg; [xomashyo partiyasi]\n&#x27; +
+&#x27;  yuklash Курт сублимированный; К-3; Курт (сырьё); 12\n&#x27; +
+&#x27;*tushirish* Mahsulot; partiya; tayyor kg; [brak kg]\n&#x27; +
+&#x27;  tushirish Курт сублимированный; К-3; 7,8\n&#x27; +
+&#x27;  sublimatorda bitta yuklama bo\&#x27;lsa: tushirish 7,8\n&#x27; +
+&#x27;*sublimator* — hozir nima yuklangan\n\n&#x27; +
+&#x27;Mahsulot nomlari jadvaldagidek (rus tilida) yoziladi — nomning bir qismi yetarli.&#x27;;
+const HELP_ADMIN_UZ = &#x27;\n\n👤 *Rahbar uchun*\n*/admin* kod — rahbar huquqini olish\n&#x27; +
+  &#x27;*oxirgi* — oxirgi 10 ta yozuv raqamlari bilan (mumkin: oxirgi 20)\n*ochirish* N — «oxirgi» ro\&#x27;yxatidagi N-yozuvni o\&#x27;chirish&#x27;;
+
+// Перевод ответа бота: сначала шаблоны с переменными, потом фразы (длинные раньше коротких)
+const RX_UZ = [
+  [/Товар «(.+?)» не найден в справочнике\./g, &quot;«$1» ma&#x27;lumotnomada topilmadi.&quot;],
+  [/Партия «(.+?)» товара «(.+?)» не найдена или пуста\./g, &quot;«$2» mahsulotining «$1» partiyasi topilmadi yoki bo&#x27;sh.&quot;],
+  [/В партии (.+?) только (.+?)\./g, &#x27;$1 partiyada faqat $2.&#x27;],
+  [/Не хватает «(.+?)»: на складе (.+?), нужно (.+?)\./g, &#x27;«$1» yetarli emas: omborda $2, kerak $3.&#x27;],
+  [/Не хватает «(.+?)»: на складе (.+?)\./g, &#x27;«$1» yetarli emas: omborda $2.&#x27;],
+  [/Неверное число в поле «(.+?)»: /g, &quot;«$1» maydonida noto&#x27;g&#x27;ri son: &quot;],
+  [/Для «(.+?)» обязательно укажите причину\./g, &#x27;«$1» uchun sababni albatta yozing.&#x27;],
+  [/Неизвестный тип расхода «(.+?)»\..*/g, &quot;Noma&#x27;lum chiqim turi «$1». Turlar: jonatish, sotuv, marketpleys, namuna, brak, yoqotish, hisobdan, qaytarish.&quot;],
+  [/✅ Партий со сроком меньше (\d+) дней нет\./g, &quot;✅ Muddati $1 kundan kam partiyalar yo&#x27;q.&quot;],
+  [/⏳ Сроки \(&lt; (\d+) дн\):/g, &#x27;⏳ Muddatlar (&lt; $1 kun):&#x27;],
+  [/\((-?\d+) дн\)/g, &#x27;($1 kun)&#x27;],
+  [/↩ Удалено строк: (\d+) \(лист «(.+?)»\)\./g, &quot;↩ O&#x27;chirilgan qatorlar: $1 («$2» varag&#x27;i).&quot;],
+  [/Укажите номер из списка: от 1 до (\d+)\./g, &quot;Ro&#x27;yxatdagi raqamni kiriting: 1 dan $1 gacha.&quot;],
+  [/В сублиматоре (\d+) загрузки — укажите какую\./g, &#x27;Sublimatorda $1 ta yuklama — qaysi biri ekanini yozing.&#x27;],
+  [/⏳ В сублиматоре \((\d+)\):/g, &#x27;⏳ Sublimatorda ($1):&#x27;],
+  [/загружено (\S+) \((\d+) дн\)/g, &#x27;yuklangan $1 ($2 kun)&#x27;],
+  [/\n   выгрузка (.+?); (.+?); ВЕС/g, &#x27;\n   tushirish $1; $2; OG\&#x27;IRLIK&#x27;],
+  [/Партия (.+?) \(«(.+?)»\) уже в сублиматоре\..*/g, &#x27;$1 partiya («$2») allaqachon sublimatorda. Avval tushiring yoki boshqa raqam bering.&#x27;],
+  [/Вес после сушки \((.+?)\) больше веса сырья \((.+?)\) — проверьте цифры\./g, &quot;Quritilgandan keyingi og&#x27;irlik ($1) xomashyodan ($2) ko&#x27;p — raqamlarni tekshiring.&quot;],
+  [/Найдено несколько товаров — уточните:/g, &#x27;Bir nechta mahsulot topildi — aniqlashtiring:&#x27;]
+];
+const PH_UZ = [
+  // общие ответы
+  [&#x27;Вы уже подключены.&#x27;, &#x27;Siz allaqachon ulangansiz.&#x27;], [&#x27;✅ Подключено: &#x27;, &#x27;✅ Ulandi: &#x27;],
+  [&#x27;Чтобы подключиться, отправьте: /start ПИН-код (спросите у руководителя).&#x27;, &quot;Ulanish uchun yuboring: /start PIN-kod (rahbardan so&#x27;rang).&quot;],
+  [&#x27;Нет доступа. Отправьте /start ПИН-код.&#x27;, &quot;Ruxsat yo&#x27;q. /start PIN-kod yuboring.&quot;], [&#x27;✅ Вы руководитель.&#x27;, &#x27;✅ Siz rahbarsiz.&#x27;],
+  [&#x27;Неверный код руководителя.&#x27;, &quot;Rahbar kodi noto&#x27;g&#x27;ri.&quot;], [&#x27;Не понял команду. Напишите «помощь».&#x27;, &quot;Buyruq tushunilmadi. «yordam» deb yozing.&quot;],
+  [&#x27;Команда только для руководителя. Отправьте /admin код.&#x27;, &#x27;Buyruq faqat rahbar uchun. /admin kod yuboring.&#x27;],
+  [&#x27;Сначала отправьте «последние» (список действует 10 минут).&#x27;, &quot;Avval «oxirgi» deb yuboring (ro&#x27;yxat 10 daqiqa amal qiladi).&quot;],
+  [&#x27;Строки в таблице сдвинулись. Отправьте «последние» ещё раз.&#x27;, &quot;Jadvaldagi qatorlar siljidi. «oxirgi»ni yana yuboring.&quot;],
+  [&#x27;🗂 Последние записи (для удаления: удалить N):&#x27;, &quot;🗂 Oxirgi yozuvlar (o&#x27;chirish uchun: ochirish N):&quot;], [&#x27;Записей нет.&#x27;, &quot;Yozuvlar yo&#x27;q.&quot;],
+  [&#x27;Нечего отменять (отмена доступна 15 минут после записи).&#x27;, &quot;Bekor qiladigan narsa yo&#x27;q (yozuvdan keyin 15 daqiqa ichida mumkin).&quot;],
+  [&#x27;Напишите: остаток часть названия&#x27;, &#x27;Yozing: qoldiq nomining bir qismi&#x27;], [&#x27;Ничего не найдено.&#x27;, &#x27;Hech narsa topilmadi.&#x27;],
+  [&#x27;✅ Сублиматор пуст — загрузок нет.&#x27;, &quot;✅ Sublimator bo&#x27;sh — yuklama yo&#x27;q.&quot;], [&#x27;Сублиматор пуст.&#x27;, &quot;Sublimator bo&#x27;sh.&quot;],
+  [&#x27;Вместо ВЕС впишите кг после сушки.&#x27;, &quot;OG&#x27;IRLIK o&#x27;rniga quritilgandan keyingi kg ni yozing.&quot;],
+  [&#x27;После сушки откройте «Выпуск → Выгрузка» и впишите вес.&#x27;, &quot;Quritishdan keyin «tushirish» buyrug&#x27;ini yuboring yoki ilovada og&#x27;irlikni yozing.&quot;],
+  [&#x27;Загрузка не найдена — возможно, её уже выгрузили. Обновите экран.&#x27;, &#x27;Yuklama topilmadi — ehtimol allaqachon tushirilgan.&#x27;],
+  [&#x27;У загрузки не указан вес сырья — исправьте строку в листе «Выпуск».&#x27;, &quot;Yuklamada xomashyo og&#x27;irligi yo&#x27;q — «Выпуск» varag&#x27;idagi qatorni tuzating.&quot;],
+  [&#x27;Фасовка оформляется сразу, без загрузки в сублиматор.&#x27;, &#x27;Qadoqlash sublimatorga yuklashsiz darhol rasmiylashtiriladi.&#x27;],
+  [&#x27;Продукт и сырьё — один и тот же товар.&#x27;, &#x27;Mahsulot va xomashyo — bir xil tovar.&#x27;],
+  [&#x27;📊 Склад на &#x27;, &#x27;📊 Ombor, &#x27;], [&#x27;✅ Проблем не найдено.&#x27;, &#x27;✅ Muammo topilmadi.&#x27;], [&#x27;Подробно:&#x27;, &#x27;Batafsil:&#x27;],
+  [&#x27;✏ Изменения в таблице:&#x27;, &quot;✏ Jadvaldagi o&#x27;zgarishlar:&quot;], [&#x27;✏ Внесено в таблицу вручную:&#x27;, &quot;✏ Jadvalga qo&#x27;lda kiritildi:&quot;],
+  [&#x27;(исправленная строка видна как ➖ старая и ➕ новая)&#x27;, &quot;(tuzatilgan qator ➖ eski va ➕ yangi ko&#x27;rinishida)&quot;],
+  // форматы и ошибки
+  [&#x27;Формат: приход Товар; кол-во; партия; дата произв.; откуда&#x27;, &#x27;Format: kirim Mahsulot; miqdor; partiya; ishlab chiqarilgan sana; qayerdan&#x27;],
+  [&#x27;Формат: выпуск Продукт; кол-во; партия; из чего; кол-во сырья; [партия сырья]; [брак кг]&#x27;, &#x27;Format: qadoqlash Mahsulot; miqdor; partiya; nimadan; xomashyo miqdori; [xomashyo partiyasi]; [brak kg]&#x27;],
+  [&#x27;Формат: расход Тип; товар; кол-во; кому/причина; [партия]&#x27;, &#x27;Format: chiqim Tur; mahsulot; miqdor; kimga/sabab; [partiya]&#x27;],
+  [&#x27;Формат: брак Товар; кол-во; причина; [партия]&#x27;, &#x27;Format: brak Mahsulot; miqdor; sabab; [partiya]&#x27;],
+  [&#x27;Формат: загрузка Продукт; партия; сырьё; кг сырья; [партия сырья]&#x27;, &#x27;Format: yuklash Mahsulot; partiya; xomashyo; xomashyo kg; [xomashyo partiyasi]&#x27;],
+  [&#x27;Формат: выгрузка Продукт; партия; кг готового; [брак кг]&#x27;, &#x27;Format: tushirish Mahsulot; partiya; tayyor kg; [brak kg]&#x27;],
+  [&#x27;Пример: загрузка &#x27;, &#x27;Misol: yuklash &#x27;],
+  [&#x27;Укажите номер партии (3-е поле).&#x27;, &#x27;Partiya raqamini yozing (3-maydon).&#x27;], [&#x27;Укажите номер партии.&#x27;, &#x27;Partiya raqamini yozing.&#x27;],
+  [&#x27;Укажите партию продукта.&#x27;, &#x27;Mahsulot partiyasini yozing.&#x27;], [&#x27;Не указан товар.&#x27;, &quot;Mahsulot ko&#x27;rsatilmagan.&quot;],
+  [&#x27;Дата в формате ДД.ММ.ГГГГ: &#x27;, &#x27;Sana KK.OO.YYYY formatida: &#x27;], [&#x27;Не задан TELEGRAM_TOKEN&#x27;, &#x27;TELEGRAM_TOKEN berilmagan&#x27;],
+  [&#x27;«кол-во сырья»&#x27;, &#x27;«xomashyo miqdori»&#x27;], [&#x27;«кол-во»&#x27;, &#x27;«miqdor»&#x27;], [&#x27;«брак»&#x27;, &#x27;«brak»&#x27;], [&#x27;«вес после сублимации»&#x27;, &quot;«sublimatsiyadan keyingi og&#x27;irlik»&quot;],
+  // результаты
+  [&#x27;⏳ Загружено в сублиматор: &#x27;, &#x27;⏳ Sublimatorga yuklandi: &#x27;], [&#x27;✅ Выгружено: &#x27;, &#x27;✅ Tushirildi: &#x27;],
+  [&#x27;Списано сырья: &#x27;, &#x27;Chiqarilgan xomashyo: &#x27;], [&#x27;Сырьё было: &#x27;, &#x27;Xomashyo: &#x27;], [&#x27;Сырьё: &#x27;, &#x27;Xomashyo: &#x27;], [&#x27;сырьё: &#x27;, &#x27;xomashyo: &#x27;],
+  [&#x27;Вес 1 шт по факту: &#x27;, &quot;1 dona haqiqiy og&#x27;irligi: &quot;], [&#x27; ⚠ норма &#x27;, &quot; ⚠ me&#x27;yor &quot;], [&#x27; г — перевес&#x27;, &#x27; g — ortiqcha&#x27;],
+  [&#x27;(коридор не задан)&#x27;, &#x27;(koridor belgilanmagan)&#x27;], [&#x27;(в коридоре &#x27;, &#x27;(koridorda &#x27;], [&#x27; ⚠ ниже коридора &#x27;, &#x27; ⚠ koridordan past &#x27;], [&#x27; ⚠ выше коридора &#x27;, &#x27; ⚠ koridordan yuqori &#x27;],
+  [&#x27;— проверьте взвешивание и потери&#x27;, &quot;— tortish va yo&#x27;qotishlarni tekshiring&quot;], [&#x27;— проверьте, досушен ли продукт&#x27;, &quot;— mahsulot to&#x27;liq quritilganini tekshiring&quot;],
+  [&#x27;⚠ Не FEFO: есть партия &#x27;, &#x27;⚠ FEFO emas: partiya bor &#x27;], [&#x27; со сроком до &#x27;, &#x27;, muddati &#x27;],
+  [&#x27;⚠ Ниже минимального запаса — пора заказывать.&#x27;, &#x27;⚠ Minimal zaxiradan past — buyurtma berish vaqti.&#x27;],
+  [&#x27;загружено &#x27;, &#x27;yuklangan &#x27;], [&#x27;Остаток теперь:&#x27;, &#x27;Endi qoldiq:&#x27;], [&#x27;Остаток «&#x27;, &#x27;Qoldiq «&#x27;], [&#x27;Остаток:&#x27;, &#x27;Qoldiq:&#x27;], [&#x27;Партии:&#x27;, &#x27;Partiyalar:&#x27;], [&#x27;Выход:&#x27;, &#x27;Chiqish:&#x27;], [&#x27;Брак:&#x27;, &#x27;Brak:&#x27;],
+  [&#x27;🗑 Удалено: &#x27;, &quot;🗑 O&#x27;chirildi: &quot;], [&#x27;Инвентаризация:&#x27;, &#x27;Inventarizatsiya:&#x27;],
+  [&#x27;✅ Приход: &#x27;, &#x27;✅ Kirim: &#x27;], [&#x27;✅ Сублимация: &#x27;, &#x27;✅ Sublimatsiya: &#x27;], [&#x27;✅ Фасовка: &#x27;, &#x27;✅ Qadoqlash: &#x27;],
+  [&#x27;📥 Приход&#x27;, &#x27;📥 Kirim&#x27;], [&#x27;🏭 Выпуск&#x27;, &#x27;🏭 Ishlab chiqarish&#x27;], [&#x27;📤 Расход&#x27;, &#x27;📤 Chiqim&#x27;],
+  [&#x27;, партия &#x27;, &#x27;, partiya &#x27;], [&#x27;   партия &#x27;, &#x27;   partiya &#x27;], [&#x27; · партия &#x27;, &#x27; · partiya &#x27;], [&#x27;партия &#x27;, &#x27;partiya &#x27;], [&#x27;без партии&#x27;, &#x27;partiyasiz&#x27;],
+  [&#x27;, до &#x27;, &#x27;, &#x27;], [&#x27; — до &#x27;, &#x27; — &#x27;], [&#x27;…ещё &#x27;, &#x27;…yana &#x27;],
+  // проверки дашборда и статусы
+  [&#x27;Товары с минусовым остатком&#x27;, &quot;Qoldig&#x27;i minus mahsulotlar&quot;], [&#x27;Партии с просроченным сроком&#x27;, &quot;Muddati o&#x27;tgan partiyalar&quot;],
+  [&#x27;Партии со сроком &lt; 30 дней&#x27;, &#x27;Muddati &lt; 30 kun partiyalar&#x27;], [&#x27;Товары ниже минимального запаса&#x27;, &#x27;Minimal zaxiradan past mahsulotlar&#x27;],
+  [&#x27;Выпуск: выход вне коридора / перевес на фасовке&#x27;, &quot;Ishlab chiqarish: chiqish koridordan tashqari / qadoqlashda ortiqcha&quot;],
+  [&#x27;Выпуск: выход ниже нормы / перевес на фасовке&#x27;, &quot;Ishlab chiqarish: chiqish me&#x27;yordan past / qadoqlashda ortiqcha&quot;],
+  [&#x27;Расход: нет причины / партии / не FEFO&#x27;, &quot;Chiqim: sabab / partiya yo&#x27;q / FEFO emas&quot;], [&#x27;Возможные дубли строк&#x27;, &#x27;Takroriy qatorlar ehtimoli&#x27;],
+  [&#x27;Партии «РАСХОЖДЕНИЕ» — пересчитать&#x27;, &#x27;«РАСХОЖДЕНИЕ» partiyalari — qayta sanash&#x27;],
+  [&#x27;⛔ есть просрочка&#x27;, &quot;⛔ muddati o&#x27;tgani bor&quot;], [&#x27;⛔ просрочена&#x27;, &quot;⛔ muddati o&#x27;tgan&quot;], [&#x27;⛔ минус&#x27;, &#x27;⛔ minus&#x27;], [&#x27;⚠ срок &lt; 30 дн&#x27;, &#x27;⚠ muddat &lt; 30 kun&#x27;],
+  [&#x27;⚠ ниже минимума&#x27;, &#x27;⚠ minimumdan past&#x27;], [&#x27;нет в наличии&#x27;, &#x27;mavjud emas&#x27;], [&#x27;израсходована&#x27;, &#x27;tugagan&#x27;],
+  // типы операций
+  [&#x27;Отгрузка дистрибьютору&#x27;, &quot;Distribyutorga jo&#x27;natish&quot;], [&#x27;Недостача (инвентаризация)&#x27;, &#x27;Kamomad (inventarizatsiya)&#x27;],
+  [&#x27;Излишек (инвентаризация)&#x27;, &#x27;Ortiqcha (inventarizatsiya)&#x27;], [&#x27;Возврат от клиента&#x27;, &#x27;Mijozdan qaytarish&#x27;], [&#x27;Возврат поставщику&#x27;, &#x27;Yetkazib beruvchiga qaytarish&#x27;],
+  [&#x27;Списание (срок)&#x27;, &#x27;Hisobdan chiqarish (muddat)&#x27;], [&#x27;Начальный остаток&#x27;, &quot;Boshlang&#x27;ich qoldiq&quot;], [&#x27;Потеря/усушка&#x27;, &quot;Yo&#x27;qotish/qurish&quot;],
+  [&#x27;Образец/промо&#x27;, &#x27;Namuna/promo&#x27;], [&#x27;Маркетплейс&#x27;, &#x27;Marketpleys&#x27;], [&#x27;Продажа&#x27;, &#x27;Sotuv&#x27;], [&#x27;Закупка&#x27;, &#x27;Xarid&#x27;], [&#x27;Сублимация&#x27;, &#x27;Sublimatsiya&#x27;], [&#x27;Фасовка&#x27;, &#x27;Qadoqlash&#x27;],
+  // единицы
+  [&#x27; кг&#x27;, &#x27; kg&#x27;], [&#x27; шт&#x27;, &#x27; dona&#x27;], [&#x27; сум&#x27;, &quot; so&#x27;m&quot;]
+].sort((a, b) =&gt; b[0].length - a[0].length);
+
+function trUz_(t) {
+  let s = String(t);
+  RX_UZ.forEach(([re, to]) =&gt; { s = s.replace(re, to); });
+  PH_UZ.forEach(([a, b]) =&gt; { s = s.split(a).join(b); });
+  return s;
+}
+
+// Замена send_ из основного файла: переводит ответ, если человек выбрал узбекский
+function send_(chat, text) {
+  const token = props_().getProperty(&#x27;TELEGRAM_TOKEN&#x27;);
+  if (!token) throw new Error(&#x27;Не задан TELEGRAM_TOKEN&#x27;);
+  if (langOf_(chat) === &#x27;uz&#x27;) text = trUz_(text);
+  const chunks = []; for (let i = 0; i &lt; text.length; i += 3800) chunks.push(text.slice(i, i + 3800));
+  chunks.forEach(t =&gt; {
+    const r = UrlFetchApp.fetch(&#x27;https://api.telegram.org/bot&#x27; + token + &#x27;/sendMessage&#x27;, {method: &#x27;post&#x27;, contentType: &#x27;application/json&#x27;,
+      payload: JSON.stringify({chat_id: chat, text: t, parse_mode: &#x27;Markdown&#x27;}), muteHttpExceptions: true});
+    if (r.getResponseCode() !== 200)
+      UrlFetchApp.fetch(&#x27;https://api.telegram.org/bot&#x27; + token + &#x27;/sendMessage&#x27;, {method: &#x27;post&#x27;, contentType: &#x27;application/json&#x27;,
+        payload: JSON.stringify({chat_id: chat, text: t.replace(/\*/g, &#x27;&#x27;)}), muteHttpExceptions: true});
+  });
+}
+
+// Замена outType_: понимает тип расхода и по-русски, и по-узбекски
+function outType_(t) {
+  const tl = t.toLowerCase().replace(/[ʻʼ&#x27;`]/g, &#x27;&#x27;);
+  const map = [[&#x27;отгруз&#x27;,&#x27;Отгрузка дистрибьютору&#x27;],[&#x27;дистр&#x27;,&#x27;Отгрузка дистрибьютору&#x27;],[&#x27;jonat&#x27;,&#x27;Отгрузка дистрибьютору&#x27;],[&#x27;distrib&#x27;,&#x27;Отгрузка дистрибьютору&#x27;],
+    [&#x27;продаж&#x27;,&#x27;Продажа&#x27;],[&#x27;sotuv&#x27;,&#x27;Продажа&#x27;],[&#x27;маркет&#x27;,&#x27;Маркетплейс&#x27;],[&#x27;market&#x27;,&#x27;Маркетплейс&#x27;],[&#x27;узум&#x27;,&#x27;Маркетплейс&#x27;],[&#x27;uzum&#x27;,&#x27;Маркетплейс&#x27;],
+    [&#x27;образ&#x27;,&#x27;Образец/промо&#x27;],[&#x27;промо&#x27;,&#x27;Образец/промо&#x27;],[&#x27;namuna&#x27;,&#x27;Образец/промо&#x27;],[&#x27;promo&#x27;,&#x27;Образец/промо&#x27;],
+    [&#x27;брак&#x27;,&#x27;Брак&#x27;],[&#x27;brak&#x27;,&#x27;Брак&#x27;],[&#x27;потер&#x27;,&#x27;Потеря/усушка&#x27;],[&#x27;усуш&#x27;,&#x27;Потеря/усушка&#x27;],[&#x27;yoqot&#x27;,&#x27;Потеря/усушка&#x27;],[&#x27;qurish&#x27;,&#x27;Потеря/усушка&#x27;],
+    [&#x27;списан&#x27;,&#x27;Списание (срок)&#x27;],[&#x27;hisobdan&#x27;,&#x27;Списание (срок)&#x27;],[&#x27;возврат&#x27;,&#x27;Возврат поставщику&#x27;],[&#x27;qaytar&#x27;,&#x27;Возврат поставщику&#x27;],
+    [&#x27;недостач&#x27;,&#x27;Недостача (инвентаризация)&#x27;],[&#x27;kamomad&#x27;,&#x27;Недостача (инвентаризация)&#x27;],[&#x27;проч&#x27;,&#x27;Прочее&#x27;],[&#x27;boshqa&#x27;,&#x27;Прочее&#x27;]];
+  const f = map.find(x =&gt; tl.indexOf(x[0]) &gt;= 0);
+  if (!f) throw new Error(&#x27;Неизвестный тип расхода «&#x27; + t + &#x27;». Типы: отгрузка, продажа, маркетплейс, образец, брак, потеря, списание, возврат поставщику.&#x27;);
+  return f[1];
+}
+
+// Замена handle_: команды на двух языках + переключение языка («uz» / «ru»)
+const CMD_UZ = {kirim: &#x27;приход&#x27;, chiqim: &#x27;расход&#x27;, qadoqlash: &#x27;выпуск&#x27;, ishlab: &#x27;выпуск&#x27;, qoldiq: &#x27;остаток&#x27;, muddat: &#x27;сроки&#x27;, muddatlar: &#x27;сроки&#x27;,
+  hisobot: &#x27;отчет&#x27;, bekor: &#x27;отмена&#x27;, yordam: &#x27;помощь&#x27;, yuklash: &#x27;загрузка&#x27;, tushirish: &#x27;выгрузка&#x27;, sublimator: &#x27;сублиматор&#x27;,
+  oxirgi: &#x27;последние&#x27;, ochirish: &#x27;удалить&#x27;, &quot;o&#x27;chirish&quot;: &#x27;удалить&#x27;, &#x27;oʻchirish&#x27;: &#x27;удалить&#x27;};
+function handle_(msg) {
+  const chat = String(msg.chat.id), text = msg.text.trim();
+  const users = users_();
+  const help = () =&gt; (langOf_(chat) === &#x27;uz&#x27; ? HELP_UZ + (admins_()[chat] ? HELP_ADMIN_UZ : &#x27;&#x27;) : HELP + HELP_SUB + (admins_()[chat] ? HELP_ADMIN : &#x27;&#x27;));
+  if (/^\/start/i.test(text)) {
+    const pin = (text.split(/\s+/)[1] || &#x27;&#x27;).trim();
+    if (users[chat]) return send_(chat, &#x27;Вы уже подключены.\n\n&#x27; + help());
+    if (pin &amp;&amp; pin === String(props_().getProperty(&#x27;PIN&#x27;)).trim()) {
+      users[chat] = msg.from.first_name || (&#x27;user&#x27; + chat);
+      props_().setProperty(&#x27;USERS&#x27;, JSON.stringify(users));
+      if (!langs_()[chat] &amp;&amp; msg.from.language_code === &#x27;uz&#x27;) setLang_(chat, &#x27;uz&#x27;);
+      return send_(chat, &#x27;✅ Подключено: &#x27; + users[chat] + &#x27;\n\n&#x27; + help() + &#x27;\n\nTil: «uz» — oʻzbekcha, «ru» — русский&#x27;);
+    }
+    return send_(chat, &#x27;Чтобы подключиться, отправьте: /start ПИН-код (спросите у руководителя).\nUlanish uchun yuboring: /start PIN-kod&#x27;);
+  }
+  if (!users[chat]) return send_(chat, &#x27;Нет доступа. Отправьте /start ПИН-код.\nRuxsat yoʻq. /start PIN-kod yuboring.&#x27;);
+  const low = text.toLowerCase().replace(/^\//, &#x27;&#x27;);
+  if (low === &#x27;uz&#x27; || low === &#x27;uzb&#x27; || low === &#x27;ozbek&#x27; || low === &quot;o&#x27;zbek&quot; || low === &#x27;til&#x27;) { setLang_(chat, &#x27;uz&#x27;); return send_(chat, &#x27;✅ Til: oʻzbekcha.\n\n&#x27; + help()); }
+  if (low === &#x27;ru&#x27; || low === &#x27;рус&#x27; || low === &#x27;русский&#x27; || low === &#x27;язык&#x27;) { setLang_(chat, &#x27;ru&#x27;); return send_(chat, &#x27;✅ Язык: русский.\n\n&#x27; + help()); }
+  if (/^\/admin/i.test(text)) {
+    const code = (text.split(/\s+/)[1] || &#x27;&#x27;).trim(), ap = String(props_().getProperty(&#x27;ADMIN_PIN&#x27;) || &#x27;&#x27;).trim();
+    if (ap &amp;&amp; code === ap) {
+      const a = admins_(); a[chat] = users[chat]; props_().setProperty(&#x27;ADMINS&#x27;, JSON.stringify(a));
+      return send_(chat, &#x27;✅ Вы руководитель.&#x27; + (langOf_(chat) === &#x27;uz&#x27; ? HELP_ADMIN_UZ : HELP_ADMIN));
+    }
+    return send_(chat, &#x27;Неверный код руководителя.&#x27;);
+  }
+  const who = users[chat];
+  const m = text.match(/^\/?(\S+)\s*([\s\S]*)$/);
+  let cmd = m[1].toLowerCase().replace(&#x27;ё&#x27;, &#x27;е&#x27;); const arg = m[2];
+  cmd = CMD_UZ[cmd] || CMD_UZ[cmd.replace(/[ʻʼ`]/g, &quot;&#x27;&quot;)] || cmd;
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    let reply;
+    switch (cmd) {
+      case &#x27;приход&#x27;: reply = cmdIn_(arg, who, chat); break;
+      case &#x27;выпуск&#x27;: case &#x27;фасовка&#x27;: case &#x27;сублимация&#x27;: reply = cmdProd_(arg, who, chat); break;
+      case &#x27;загрузка&#x27;: reply = cmdLoad_(arg, who, chat); break;
+      case &#x27;выгрузка&#x27;: reply = cmdUnload_(arg, who, chat); break;
+      case &#x27;сублиматор&#x27;: reply = listLoads_(); break;
+      case &#x27;расход&#x27;: reply = cmdOut_(arg, who, chat, null); break;
+      case &#x27;брак&#x27;: case &#x27;brak&#x27;: reply = cmdOut_(arg, who, chat, &#x27;Брак&#x27;); break;
+      case &#x27;остаток&#x27;: case &#x27;остатки&#x27;: reply = cmdStock_(arg); break;
+      case &#x27;сроки&#x27;: reply = cmdExpiry_(60); break;
+      case &#x27;отчет&#x27;: reply = report_(); break;
+      case &#x27;отмена&#x27;: reply = cmdUndo_(chat); break;
+      case &#x27;последние&#x27;: reply = cmdLast_(chat, arg); break;
+      case &#x27;удалить&#x27;: reply = cmdDelete_(chat, arg); break;
+      case &#x27;помощь&#x27;: case &#x27;help&#x27;: reply = help(); break;
+      default: reply = &#x27;Не понял команду. Напишите «помощь».&#x27;;
+    }
+    send_(chat, reply);
+  } catch (err) {
+    send_(chat, &#x27;⚠ &#x27; + err.message);
+  } finally { lock.releaseLock(); }
+}
+</textarea>
+<script>
+const b=document.getElementById('b'),t=document.getElementById('t'),st=document.getElementById('st');
+b.onclick=async()=>{try{await navigator.clipboard.writeText(t.value);st.textContent='✅ Скопировано '+t.value.length+' символов';}
+catch(e){t.focus();t.select();t.setSelectionRange(0,t.value.length);document.execCommand('copy');st.textContent='✅ Скопировано (если нет — выделите текст внизу вручную)';}};
+</script></body></html>
