@@ -106,6 +106,9 @@ const CFG = {
   .spin{width:64px;height:64px;border-radius:50%;border:7px solid #d6dfef;border-top-color:var(--pri);animation:s .9s linear infinite;margin:6px auto 16px}
   @keyframes s{to{transform:rotate(360deg)}}
   .center{text-align:center}
+.modes{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .chip.mode{padding:8px 4px;font-size:18px;min-height:72px}
+  .chip.mode .mi{display:block;font-size:24px;line-height:1.2}
   .empty{text-align:center;color:var(--muted);padding:28px 10px;font-size:19px}
   .pinbox{font-size:52px;letter-spacing:18px;text-align:center;min-height:80px;border:3px solid var(--pri);border-radius:14px;margin-bottom:14px;padding:6px}
   .list-sm{font-size:18px}
@@ -265,7 +268,7 @@ if (TG) {
 function topBar() {
   const home = SCR === 'home' || SCR === 'login' || SCR === 'err';
   if (TG) { home ? TG.BackButton.hide() : TG.BackButton.show(); }
-  return `<div class="top">${home ? '' : '<button class="back" data-a="back">← Назад</button>'}
+  return `<div class="top">${home || TG ? '' : '<button class="back" data-a="back">← Назад</button>'}
     <h1>${esc(TITLES[SCR] || '')}</h1><div class="who">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
 }
 function render() {
@@ -474,8 +477,8 @@ function yieldCheck(it, y) { // проверка выхода по коридо�
 }
 function modeChips() {
   const n = (S.loads || []).length;
-  const c = (m, t) => `<button class="chip ${F.mode === m ? 'on' : ''}" data-a="pmode:${m}" style="flex:1 1 200px">${t}</button>`;
-  return `<div class="chips" style="margin-bottom:16px">${c('load', '⏳ Загрузка в сублиматор')}${c('unload', '✅ Выгрузка' + (n ? ' (' + n + ')' : ''))}${c('pack', '📦 Фасовка')}</div>`;
+  const c = (m, ic, t) => `<button class="chip mode ${F.mode === m ? 'on' : ''}" data-a="pmode:${m}"><span class="mi">${ic}</span>${t}</button>`;
+  return `<div class="modes">${c('load', '⏳', 'Загрузка')}${c('unload', '✅', 'Выгрузка' + (n ? ' (' + n + ')' : ''))}${c('pack', '📦', 'Фасовка')}</div>`;
 }
 function vProd() { return modeChips() + (F.mode === 'unload' ? vUnload() : vProdForm()); }
 function vProdForm() {
