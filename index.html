@@ -67,6 +67,9 @@ const CFG = {
   .opt .nm{font-weight:700;font-size:20px}
   .opt .sub{font-size:17px;color:var(--muted);margin-top:2px}
   .opt .q{font-weight:800;font-size:21px;white-space:nowrap}
+  .total{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;width:100%;min-height:62px;padding:12px 16px;margin:4px 0 14px;border-radius:14px;background:var(--pri-bg);border:3px solid var(--pri);color:var(--pri)}
+  .total .tl{font-weight:800;font-size:20px}
+  .total .tv{font-weight:800;font-size:22px;text-align:right}
   .tag{display:inline-block;font-size:15px;font-weight:800;padding:3px 9px;border-radius:8px;margin-right:6px}
   .tag.fefo{background:var(--ok-bg);color:var(--ok)} .tag.bad{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
   .sel{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
@@ -134,6 +137,13 @@ function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); i
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const num = v => { const x = parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); return isNaN(x) ? NaN : x; };
 const r3 = x => Math.round(x * 1000) / 1000;
+// строка «Итого» — суммирует по единицам: 125,4 кг · 340 шт
+function totalRow(list, label) {
+  const by = {}, order = [];
+  list.forEach(x => { if (typeof x.q !== 'number' || !isFinite(x.q)) return; const u = x.u || ''; if (!(u in by)) { by[u] = 0; order.push(u); } by[u] += x.q; });
+  if (!order.length) return '';
+  return `<div class="total"><span class="tl">${label || 'Итого'}</span><span class="tv">${order.map(u => fmt(r3(by[u])) + (u ? ' ' + esc(u) : '')).join(' · ')}</span></div>`;
+}
 const fmt = n => typeof n === 'number' ? n.toLocaleString('ru-RU', {maximumFractionDigits: 3}) : (n === '' || n == null ? '—' : esc(n));
 const isoD = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
 const today = () => isoD(new Date());
@@ -166,6 +176,7 @@ const TYPES_UZ = {
 const UNITS_UZ = {'кг': 'kg', 'шт': 'dona', 'сум': "so'm", 'дн': 'kun', 'г': 'g', 'мин': 'daqiqa', 'ед.': 'birlik'};
 const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   // разделы и плитки
+  'Итого': 'Jami', 'Итого сырья в сублиматоре': 'Sublimatordagi xom ashyo jami', 'Итого по учёту': "Hisob bo'yicha jami",
   'Склад SUB PROFI': 'SUB PROFI ombori', 'Приход': 'Kirim', 'Расход': 'Chiqim', 'Выпуск': 'Ishlab chiqarish', 'Остатки': 'Qoldiq',
   'Инвентаризация': 'Inventarizatsiya', 'Внимание': 'Diqqat', 'закупка, возврат': 'xarid, qaytarish',
   'отгрузка, брак, списание': "jo'natish, brak, hisobdan chiqarish", 'загрузка, выгрузка, фасовка': 'yuklash, tushirish, qadoqlash',
@@ -256,6 +267,9 @@ const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya r
   'загрузка': 'yuklama', 'вес после сублимации': "sublimatsiyadan keyingi og'irlik", 'факт хотя бы по одной партии': "kamida bitta partiya bo'yicha fakt"};
 const u = x => UNITS_UZ[x] || x, ty = x => TYPES_UZ[x] || x;
 const UZR = [
+  [/^[\d\s ,.−+-]+\s(кг|шт|сум|г)( · [\d\s ,.−+-]+\s(кг|шт|сум|г))+$/, m => m.replace(/(кг|шт|сум|г)(?=$| ·)/g, x => u(x))],
+  [/^Итого по партиям: ([\d\s ,.−-]+) (кг|шт|г)$/, (m, n, un) => "Partiyalar bo'yicha jami: " + n + ' ' + u(un)],
+  [/^Итого факт \((\d+) из (\d+)\)$/, (m, a, b) => 'Fakt jami (' + a + ' / ' + b + ')'],
   [/^([\d\s ,.−+-]+)\s(кг|шт|сум|дн|г|мин)$/, (m, n, un) => n + ' ' + u(un)],
   [/^(.+) — ([\d\s ,.−-]+) (кг|шт)$/, (m, a, n, un) => a + ' — ' + n + ' ' + u(un)],
   [/^Требует внимания: (\d+) провер\S+$/, (m, n) => 'Diqqat talab qiladi: ' + n + ' ta tekshiruv'],
@@ -767,7 +781,7 @@ function vUnload() {
   const L = S.loads || [], V = vUnload_valid();
   if (!L.length) return '<div class="empty">Сейчас в сублиматоре ничего нет.<br>Загрузку оформляют во вкладке «⏳ Загрузка в сублиматор».</div>';
   let h = card(1, 'Какую загрузку выгружаете', L.map((x, i) => `<button class="opt ${F.load === i ? 'on' : ''}" data-a="lsel:${i}"><div>
-    <div class="nm">${esc(x.item)} · партия ${esc(x.batch)}</div><div class="sub">сырьё: ${esc(x.raw)} — ${fmt(x.rq)} кг · загружено ${esc(x.date)}${x.days != null ? ' (' + (x.days === 0 ? 'сегодня' : x.days + ' дн назад') + ')' : ''}</div></div></button>`).join(''), true, V.m.load);
+    <div class="nm">${esc(x.item)} · партия ${esc(x.batch)}</div><div class="sub">сырьё: ${esc(x.raw)} — ${fmt(x.rq)} кг · загружено ${esc(x.date)}${x.days != null ? ' (' + (x.days === 0 ? 'сегодня' : x.days + ' дн назад') + ')' : ''}</div></div></button>`).join('') + (L.length > 1 ? totalRow(L.map(x => ({q: x.rq, u: 'кг'})), 'Итого сырья в сублиматоре') : ''), true, V.m.load);
   if (F.load != null && L[F.load]) {
     const x = L[F.load], it = itemBy(x.item) || {u: 'кг'};
     h += '<div class="grid2"><div>' + card(2, 'Вес после сублимации (взвесьте без тары)', qbox('qty', 'Вес готового: ' + x.item, it.u, unitInt(it.u)) +
@@ -809,6 +823,12 @@ function vInv() {
           ${d === null ? '' : d === 0 ? '<div class="msg ok">✓ Совпадает</div>' : d < 0 ? `<div class="msg bad">Недостача ${fmt(-d)} ${esc(it.u)}</div>` : `<div class="msg warn">Излишек ${fmt(d)} ${esc(it.u)}${r.src === 'Выпуск' ? ' — по партии выпуска излишек внесёт руководитель' : ''}</div>`}
         </div>`;
       });
+      const IR = invRows();
+      if (IR.length > 1) {
+        const facts = IR.map((r, i) => F.facts[i]).filter(f => f !== undefined && f !== '').map(num).filter(v => !isNaN(v));
+        h += '</div>' + totalRow([{q: r3(IR.reduce((t, r) => t + (r.q || 0), 0)), u: it.u}], 'Итого по учёту') +
+          (facts.length ? totalRow([{q: r3(facts.reduce((t, v) => t + v, 0)), u: it.u}], 'Итого факт (' + facts.length + ' из ' + IR.length + ')') : '') + '<div>';
+      }
       h += '</div><div class="hint">Партии, по которым факт не введён, не изменятся. Если нашли партию, которой нет в списке, — сообщите руководителю.</div>';
     }
   }
@@ -888,21 +908,22 @@ function drawStockList() {
     return `<button class="opt" data-a="sopen:${i}" style="flex-wrap:wrap"><div style="flex:1"><div class="nm">${esc(s.n)}</div>
       <div class="sub">${s.exp ? 'ближайший срок: ' + esc(s.exp) + ' ' : ''}${st}</div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div>
       ${open ? `<div style="width:100%;margin-top:10px;font-size:18px">${open === 'load' ? 'Загрузка партий…' : open.length ? open.map((b, k) =>
-        `<div style="padding:6px 0;border-top:1px dashed #c9ced8">${k === 0 ? '<span class="tag fefo">★</span>' : ''}Партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(s.u)} · до ${esc(b.exp || '—')}${b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? ' <span class="tag bad">' + (b.d < 0 ? 'просрочена' : b.d + ' дн') + '</span>' : ''}</div>`).join('') : 'Партий нет (упаковка или без номера)'}</div>` : ''}
+        `<div style="padding:6px 0;border-top:1px dashed #c9ced8">${k === 0 ? '<span class="tag fefo">★</span>' : ''}Партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(s.u)} · до ${esc(b.exp || '—')}${b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? ' <span class="tag bad">' + (b.d < 0 ? 'просрочена' : b.d + ' дн') + '</span>' : ''}</div>`).join('') + (open.length > 1 ? `<div style="padding:6px 0;border-top:2px solid #c9ced8;font-weight:800">Итого по партиям: ${fmt(r3(open.reduce((t, b) => t + (b.q || 0), 0)))} ${esc(s.u)}</div>` : '') : 'Партий нет (упаковка или без номера)'}</div>` : ''}
     </button>`;
-  }).join('') : '<div class="empty">Ничего не найдено' + (F.all ? '' : '. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.') + '</div>';
+  }).join('') + totalRow(rows.map(({s}) => ({q: s.q, u: s.u}))) : '<div class="empty">Ничего не найдено' + (F.all ? '' : '. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.') + '</div>';
 }
 
 /* ================= ВНИМАНИЕ ================= */
 function vAttn() {
   let h = '<h2>Проверки</h2><div class="card">' + S.checks.map(c => `<div class="sel" style="padding:8px 0;border-bottom:1px solid #e3e6eb"><span>${esc(c.t)}</span>
     <b style="font-size:24px;color:${c.n > 0 ? 'var(--bad)' : 'var(--ok)'}">${fmt(c.n)}</b></div>`).join('') + '</div>';
+  const uq = x => { const st = S.stock.find(s => s.n === x.n); return {q: x.q, u: st ? st.u : ''}; };
   const soon = S.expiry.filter(x => x.d <= CFG.EXPIRY_WARN_DAYS), later = S.expiry.filter(x => x.d > CFG.EXPIRY_WARN_DAYS);
   const ex = x => `<div class="opt" style="cursor:default"><div><div class="nm">${x.d < 0 ? '⛔' : '⚠'} ${esc(x.n)}</div><div class="sub">партия ${esc(x.b)} · до ${esc(x.exp)} · ${x.d < 0 ? 'просрочена' : 'осталось ' + x.d + ' дн'}</div></div><div class="q">${fmt(x.q)}</div></div>`;
-  h += `<h2>Сроки годности меньше ${CFG.EXPIRY_WARN_DAYS} дней</h2>` + (soon.length ? soon.map(ex).join('') : '<div class="msg ok">✅ Таких партий нет</div>');
-  if (later.length) h += `<h2>Сроки ${CFG.EXPIRY_WARN_DAYS}–60 дней</h2>` + later.map(ex).join('');
+  h += `<h2>Сроки годности меньше ${CFG.EXPIRY_WARN_DAYS} дней</h2>` + (soon.length ? soon.map(ex).join('') + totalRow(soon.map(uq)) : '<div class="msg ok">✅ Таких партий нет</div>');
+  if (later.length) h += `<h2>Сроки ${CFG.EXPIRY_WARN_DAYS}–60 дней</h2>` + later.map(ex).join('') + totalRow(later.map(uq));
   const pr = S.stock.filter(s => s.st && s.st !== 'ок' && s.st !== 'нет в наличии');
-  h += '<h2>Товары с проблемами</h2>' + (pr.length ? pr.map(s => `<div class="opt" style="cursor:default"><div><div class="nm">${esc(s.n)}</div><div class="sub"><span class="tag ${s.st.includes('⛔') ? 'bad' : 'warn'}">${esc(s.st)}</span></div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div></div>`).join('') : '<div class="msg ok">✅ Проблем нет</div>');
+  h += '<h2>Товары с проблемами</h2>' + (pr.length ? pr.map(s => `<div class="opt" style="cursor:default"><div><div class="nm">${esc(s.n)}</div><div class="sub"><span class="tag ${s.st.includes('⛔') ? 'bad' : 'warn'}">${esc(s.st)}</span></div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div></div>`).join('') + totalRow(pr.map(s => ({q: s.q, u: s.u}))) : '<div class="msg ok">✅ Проблем нет</div>');
   if (S.admin) h += `<h2>Руководитель</h2><div class="card"><button class="btn wide" data-a="last">Показать последние записи</button><div id="lastlist" class="list-sm" style="margin-top:12px">${F.last ? F.last.map((t, i) =>
     `<div class="sel" style="padding:10px 0;border-bottom:1px solid #e3e6eb"><span style="flex:1">${i + 1}. ${esc(t)}</span><button class="btn bad" data-a="del:${i + 1}">Удалить</button></div>`).join('') || 'Записей нет' : ''}</div></div>`;
   return h;
