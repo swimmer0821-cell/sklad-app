@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Себестоимость Laza</title>
+<style>
+:root{--bg:#f4f2ee;--card:#fff;--ink:#1d1b18;--mute:#6f6a62;--line:#e4dfd6;--acc:#1f6f4a;--accs:#e5f2eb;--warn:#a5561a;--warns:#fbeee2;--bad:#b3261e;--bads:#fbe7e5}
+@media (prefers-color-scheme:dark){:root{--bg:#141311;--card:#1f1d1a;--ink:#f1ede6;--mute:#a39d93;--line:#34312c;--acc:#5fc493;--accs:#183326;--warn:#f0a868;--warns:#3a2816;--bad:#ff8a80;--bads:#3b1d1a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px 0}
+.top{display:flex;align-items:center;gap:12px}
+h1{font-size:22px;margin:0;flex:1}
+.upd{color:var(--mute);font-size:13px}
+nav{display:flex;gap:6px;margin-top:10px}
+nav button{flex:1;border:0;background:none;padding:12px 6px;font-size:17px;color:var(--mute);border-bottom:3px solid transparent;font-weight:600}
+nav button.on{color:var(--acc);border-color:var(--acc)}
+main{padding:16px;max-width:980px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.row{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.mute{color:var(--mute);font-size:14px}
+.big{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{display:inline-block;font-size:13px;padding:2px 8px;border-radius:99px;background:var(--accs);color:var(--acc);font-weight:600}
+.tag.f{background:var(--line);color:var(--ink)}
+.warn{background:var(--warns);color:var(--warn);border-radius:10px;padding:8px 10px;font-size:14px;margin-top:8px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 16px;margin-top:10px}
+.grid div span{display:block;color:var(--mute);font-size:13px}
+.grid div b{font-variant-numeric:tabular-nums}
+.pos{color:var(--acc)}.neg{color:var(--bad)}
+details{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:12px}
+summary{padding:14px 16px;font-weight:700;font-size:18px;cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+summary::after{content:"▾";color:var(--mute)}
+details[open] summary::after{content:"▴"}
+.prm{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line)}
+.prm .l{flex:1;min-width:0}
+.prm .l small{display:block;color:var(--mute);font-size:13px}
+.prm input{width:150px;font-size:19px;padding:10px;border:1px solid var(--line);border-radius:10px;text-align:right;background:var(--bg);color:var(--ink);font-variant-numeric:tabular-nums}
+.prm input.ch{border-color:var(--acc);background:var(--accs)}
+.prm input.em{border-color:var(--warn)}
+.prm .u{width:78px;color:var(--mute);font-size:13px}
+.bar{position:sticky;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--line);display:none;gap:10px}
+.bar.on{display:flex}
+.btn{border:0;border-radius:12px;padding:16px 20px;font-size:18px;font-weight:700;background:var(--acc);color:#fff;flex:1}
+.btn.sec{background:var(--line);color:var(--ink);flex:0 0 auto}
+.btn:disabled{opacity:.5}
+.login{max-width:380px;margin:12vh auto;padding:0 16px;text-align:center}
+.login input{width:100%;font-size:28px;letter-spacing:8px;text-align:center;padding:14px;border:1px solid var(--line);border-radius:12px;margin:8px 0;background:var(--card);color:var(--ink)}
+.err{color:var(--bad);min-height:24px;margin:8px 0}
+.flt{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.flt button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:99px;padding:8px 14px;font-size:15px}
+.flt button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.empty{text-align:center;color:var(--mute);padding:40px 16px}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;font-size:16px;display:none;z-index:9}
+.load{text-align:center;color:var(--mute);padding:40px}
+</style>
+</head>
+<body>
+<div id="app"><div class="load">Загрузка…</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const API='https://script.google.com/macros/s/AKfycbyT1Q0cfAhF7HZC-UszWwxwlpWrInDGVwxhoftoRhDE0INRwYYO2xaqtYqp8QNa1kVsNw/exec';
+const KEY='laza_cost_token';
+let tok=null,D=null,tab='b',flt='all',changes={},busy=false;
+try{tok=localStorage.getItem(KEY)}catch(e){}
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fm=v=>v==null||v===''||isNaN(v)?'—':Math.round(v).toLocaleString('ru-RU');
+const fk=v=>v==null||v===''||isNaN(v)?'—':(Math.round(v*1000)/1000).toLocaleString('ru-RU');
+const pc=v=>v==null||v===''||isNaN(v)?'—':(v*100).toFixed(1).replace('.',',')+'%';
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2600)}
+async function call(action,data){
+  const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,data:data||{},ctoken:tok})});
+  const j=await r.json();
+  if(!j.ok&&j.auth===false){tok=null;try{localStorage.removeItem(KEY)}catch(e){};login();throw new Error(j.error)}
+  if(!j.ok)throw new Error(j.error||'Ошибка');
+  return j;
+}
+function login(mode,msg){
+  const nw=mode==='new';
+  $('#app').innerHTML=`<div class="login"><h1>Себестоимость</h1><p class="mute">${nw?'Первый вход: придумайте ПИН владельца (4–8 цифр). Сотрудникам его не давайте.':'Только для владельца'}</p>
+  <input id="p1" type="password" inputmode="numeric" autocomplete="off" placeholder="ПИН">
+  ${nw?'<input id="p2" type="password" inputmode="numeric" autocomplete="off" placeholder="Повторите ПИН">':''}
+  <div class="err" id="er">${esc(msg||'')}</div><button class="btn" id="go" style="width:100%">${nw?'Сохранить ПИН и войти':'Войти'}</button></div>`;
+  $('#p1').focus();
+  const go=async()=>{
+    const p1=$('#p1').value.trim(),p2=nw?$('#p2').value.trim():undefined;
+    if(!p1){$('#er').textContent='Введите ПИН';return}
+    $('#go').disabled=true;$('#er').textContent='';
+    try{
+      const j=await call('cost_login',{pin:p1,pin2:p2});
+      if(j.needNew){login('new');return}
+      tok=j.ctoken;try{localStorage.setItem(KEY,tok)}catch(e){}
+      load();
+    }catch(e){$('#er').textContent=e.message;$('#go').disabled=false}
+  };
+  $('#go').onclick=go;document.querySelectorAll('.login input').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')go()});
+}
+async function load(){
+  if(!D)$('#app').innerHTML='<div class="load">Считаю себестоимость…</div>';
+  try{const j=await call('cost_init');D=j.data;changes={};render()}
+  catch(e){if(tok)$('#app').innerHTML=`<div class="empty">${esc(e.message)}<br><br><button class="btn" onclick="load()">Повторить</button></div>`}
+}
+function render(){
+  $('#app').innerHTML=`<header><div class="top"><h1>Себестоимость</h1><span class="upd">${esc(D.updated)}</span></div>
+  <nav><button data-t="b" class="${tab==='b'?'on':''}">Партии</button><button data-t="p" class="${tab==='p'?'on':''}">Цены</button><button data-t="s" class="${tab==='s'?'on':''}">Итог</button></nav></header>
+  <main id="m"></main><div class="bar" id="bar"><button class="btn sec" id="cancel">Отмена</button><button class="btn" id="save">Сохранить</button></div>`;
+  document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(Object.keys(changes).length&&!confirm('Есть несохранённые цены. Уйти без сохранения?'))return;changes={};tab=b.dataset.t;render()});
+  if(tab==='b')renderBatches();else if(tab==='p')renderParams();else renderSum();
+}
+function renderBatches(){
+  const rows=D.rows.filter(x=>flt==='all'||(flt==='s'&&x.type==='Сублимация')||(flt==='f'&&x.type==='Фасовка')||(flt==='m'&&x.miss.length));
+  const nm=D.rows.filter(x=>x.miss.length).length;
+  let h=`<div class="flt">${[['all','Все'],['s','Сублимация'],['f','Фасовка'],['m','Не хватает данных ('+nm+')']].map(([k,t])=>`<button data-f="${k}" class="${flt===k?'on':''}">${t}</button>`).join('')}</div>`;
+  if(!rows.length)h+=`<div class="empty">${D.rows.length?'Нет партий в этом фильтре.':'Пока нет выгруженных партий.<br>Себестоимость появится после выгрузки из сублиматора или фасовки.'}</div>`;
+  rows.forEach(x=>{
+    const u=x.unit==='кг'?'кг':x.unit;
+    h+=`<div class="card"><div class="row"><div><span class="tag ${x.type==='Фасовка'?'f':''}">${esc(x.type)}</span> <b>${esc(x.item)}</b><div class="mute">Партия ${esc(x.batch||'—')} · ${esc(x.date)} · ${fk(x.qty)} ${esc(u)}</div></div>
+    <div style="text-align:right"><div class="big">${fm(x.fullPlan)}</div><div class="mute">полная за 1 ${esc(u)} (план)</div></div></div>
+    <div class="grid">
+      <div><span>Прямая за 1 ${esc(u)}</span><b>${fm(x.per)}</b></div>
+      <div><span>Полная (факт мес.)</span><b>${fm(x.fullFact)}</b></div>
+      ${x.type==='Сублимация'?`<div><span>Выход</span><b>${pc(x.yld)}</b></div><div><span>Сырьё, кг</span><b>${fk(x.rawKg)}</b></div>
+      <div><span>Сырьё, сум</span><b>${fm(x.rawSum)}</b></div><div><span>Сублимация + свет</span><b>${fm(x.sublSum+x.elecSum)}</b></div>`
+      :`<div><span>Сублимат, кг</span><b>${fk(x.rawKg)}</b></div><div><span>Упаковка всего</span><b>${fm(x.pack)}</b></div>
+      <div><span>Цена продажи</span><b>${fm(x.price)}</b></div><div><span>Чистая прибыль 1 шт</span><b class="${x.net>0?'pos':x.net<0?'neg':''}">${fm(x.net)}</b></div>
+      <div><span>Чистая маржа</span><b class="${x.margin>0?'pos':x.margin<0?'neg':''}">${pc(x.margin)}</b></div>`}
+      <div><span>Затраты партии</span><b>${fm(x.direct)}</b></div>
+    </div>
+    <div class="mute" style="margin-top:6px">Из чего: ${esc(x.raw||'—')}</div>
+    ${x.miss.length?`<div class="warn">⚠ ${x.miss.map(esc).join('<br>⚠ ')}<br>Впишите цену во вкладке «Цены».</div>`:''}</div>`;
+  });
+  $('#m').innerHTML=h;
+  document.querySelectorAll('.flt button').forEach(b=>b.onclick=()=>{flt=b.dataset.f;renderBatches()});
+}
+const ORDER=['Общие','Накладные в месяц','Сырьё: цена за кг','Сублимат: себест. 1 кг (старые партии)','Упаковка на 1 ед. продукта','Цена продажи 1 ед. (без НДС)','Упаковка: цена за ед.'];
+function renderParams(){
+  const sec={};D.params.forEach((p,i)=>{(sec[p.s]=sec[p.s]||[]).push(Object.assign({i},p))});
+  const names=ORDER.filter(s=>sec[s]).concat(Object.keys(sec).filter(s=>ORDER.indexOf(s)<0));
+  let h='<p class="mute">Измените число и нажмите «Сохранить» — все партии пересчитаются. Пустое поле = цена не задана.</p>';
+  names.forEach((s,si)=>{
+    const L=sec[s],empty=L.filter(p=>p.v==='').length;
+    h+=`<details ${si<2?'open':''}><summary><span>${esc(s)}${empty?` <span class="mute" style="font-weight:400">· пусто ${empty}</span>`:''}</span></summary>`;
+    L.forEach(p=>{const k=p.s+'|'+p.n;const v=changes[k]!==undefined?changes[k]:p.v;
+      h+=`<div class="prm"><div class="l">${esc(p.n)}${p.c?`<small>${esc(p.c)}</small>`:''}</div>
+      <input data-k="${esc(k)}" inputmode="decimal" value="${esc(v===''?'':String(v).replace('.',','))}" class="${changes[k]!==undefined?'ch':(v===''?'em':'')}"><div class="u">${esc(p.u)}</div></div>`});
+    h+='</details>';
+  });
+  $('#m').innerHTML=h;
+  document.querySelectorAll('.prm input').forEach(i=>i.oninput=()=>{
+    const k=i.dataset.k,p=D.params.find(x=>x.s+'|'+x.n===k),orig=p.v===''?'':String(p.v).replace('.',',');
+    if(i.value.trim()===orig){delete changes[k];i.classList.remove('ch')}else{changes[k]=i.value.trim();i.classList.add('ch')}
+    bar();
+  });
+  bar();
+}
+function bar(){
+  const b=$('#bar'),n=Object.keys(changes).length;b.classList.toggle('on',n>0);
+  $('#save').textContent='Сохранить ('+n+')';
+  $('#cancel').onclick=()=>{changes={};renderParams()};
+  $('#save').onclick=async()=>{
+    if(busy)return;busy=true;$('#save').disabled=true;$('#save').textContent='Сохраняю…';
+    try{const j=await call('cost_save',{items:Object.keys(changes).map(k=>({k,v:changes[k]}))});D=j.data;changes={};toast('✅ Сохранено, партии пересчитаны');render()}
+    catch(e){toast('⚠ '+e.message);$('#save').disabled=false;bar()}
+    busy=false;
+  };
+}
+function renderSum(){
+  const s=D.sum,ovh=D.params.filter(p=>p.s==='Накладные в месяц');
+  const sb=D.rows.filter(x=>x.type==='Сублимация'),fs=D.rows.filter(x=>x.type==='Фасовка');
+  let h=`<div class="card"><div class="mute">Накладные в месяц</div><div class="big">${fm(s.ovhMonth)} сум</div>
+  <div class="grid"><div><span>План выпуска, кг/мес</span><b>${fk(s.planKg)}</b></div><div><span>Накладные на 1 кг (план)</span><b>${fm(s.ovhPlan)}</b></div>
+  <div><span>Выпущено в этом месяце, кг</span><b>${fk(s.monthKg)}</b></div><div><span>Накладные на 1 кг (факт)</span><b>${fm(s.ovhFact)}</b></div></div>
+  ${s.ovhFact&&s.ovhPlan&&s.ovhFact>s.ovhPlan*1.5?'<div class="warn">Выпуск в этом месяце ниже плана — накладные на 1 кг выше плановых.</div>':''}</div>
+  <div class="card"><b>Из чего накладные</b>${ovh.map(p=>`<div class="row" style="padding:6px 0;border-top:1px solid var(--line)"><span>${esc(p.n)}</span><span class="num">${fm(p.v)}</span></div>`).join('')}</div>
+  <div class="card"><b>Партии</b><div class="grid"><div><span>Сублимация</span><b>${sb.length}</b></div><div><span>Фасовка</span><b>${fs.length}</b></div>
+  <div><span>Не хватает данных</span><b class="${D.rows.some(x=>x.miss.length)?'neg':''}">${D.rows.filter(x=>x.miss.length).length}</b></div></div></div>
+  <div class="card mute">Расчёт: сырьё (цена партии из «Прихода», иначе из «Цен») + сублимация + свет, делим на вес после сушки. Фасовка: кг сублимата × его себестоимость + упаковка. Полная = прямая + накладные. Все расчёты — на листе «Себестоимость» в таблице.</div>
+  <button class="btn sec" style="width:100%" id="out">Выйти</button>`;
+  $('#m').innerHTML=h;
+  $('#out').onclick=async()=>{try{await call('cost_logout')}catch(e){};tok=null;try{localStorage.removeItem(KEY)}catch(e){};D=null;login()};
+}
+if(tok)load();else login();
+</script>
+</body>
+</html>

@@ -1,0 +1,388 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Код Себестоимость</title><style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:16px;background:#f5f5f7;color:#111}
+h1{font-size:22px}button{width:100%;font-size:24px;padding:22px;border:0;border-radius:14px;background:#0a7d32;color:#fff;font-weight:700}
+#st{font-size:20px;margin:14px 0;min-height:28px}textarea{width:100%;height:40vh;font:12px monospace;box-sizing:border-box}
+ol{font-size:17px;line-height:1.6}</style></head><body>
+<h1>Код для нового файла «Себестоимость»</h1>
+<button id="b">📋 Скопировать весь код</button><div id="st"></div>
+<ol><li>Нажмите зелёную кнопку — появится «✅ Скопировано».</li>
+<li>Apps Script → слева «+» рядом с «Файлы» → <b>Скрипт</b> → назовите <b>Себестоимость</b>. Файл должен быть <b>последним</b> в списке (ниже «Коридор»).</li>
+<li>Удалите в новом файле всё, что там написано, и вставьте код (Cmd+V / «Вставить»).</li>
+<li>Сохранить (💾). Ошибок быть не должно.</li>
+<li>Начать развертывание → Управление развертываниями → ✏ → Новая версия → Развернуть.</li>
+<li>Откройте <a href="cost.html">приложение «Себестоимость»</a> и придумайте ПИН владельца.</li></ol>
+<p>Строк в коде: 368. Последняя строка: <code>}</code></p>
+<textarea id="t" readonly>/**
+ * СЕБЕСТОИМОСТЬ ПАРТИЙ — только для владельца
+ * --------------------------------------------------------------
+ * Отдельный файл. Должен стоять ПОСЛЕДНИМ в списке файлов (ниже «Коридор»).
+ * Ничего запускать не нужно: листы «Цены» и «Себестоимость» создаются сами при первом входе в приложение.
+ * После вставки: Сохранить → Начать развертывание → Управление развертываниями → ✏ → Новая версия → Развернуть.
+ *
+ * Расчёт как в файлах «Себестоимость, маржа и цена на полке» и «Итог_себестоимость_и_маржа»:
+ *   Сублимация: сырьё (кг × цена партии из «Прихода» или из «Цен») + сублимация (кг сырья × ставка)
+ *               + свет (кг сырья × кВт·ч × тариф). Делим на вес после сушки → прямая себестоимость 1 кг.
+ *   Фасовка:    кг сублимата × себестоимость 1 кг его партии + упаковка → на 1 шт.
+ *   Накладные:  два варианта — по плану (накладные в месяц ÷ план кг) и по факту (÷ выпущено кг за месяц).
+ *
+ * Действия приложения (POST): cost_login {pin, pin2?} · cost_init · cost_save {items:[{k,v}]}
+ *   ключ входа владельца передаётся в поле ctoken (не путается со входом сотрудников).
+ */
+
+const COST_SH = {PAR: &#x27;Цены&#x27;, RES: &#x27;Себестоимость&#x27;};
+const COST_TOKEN_DAYS = 180;
+
+const COST_SEC = {
+  GEN: &#x27;Общие&#x27;,
+  OVH: &#x27;Накладные в месяц&#x27;,
+  RAW: &#x27;Сырьё: цена за кг&#x27;,
+  OLD: &#x27;Сублимат: себест. 1 кг (старые партии)&#x27;,
+  PACK1: &#x27;Упаковка на 1 ед. продукта&#x27;,
+  SALE: &#x27;Цена продажи 1 ед. (без НДС)&#x27;,
+  PACKP: &#x27;Упаковка: цена за ед.&#x27;
+};
+
+// Значения по умолчанию — из файлов владельца (2026). Всё меняется в приложении.
+const COST_DEF_GEN = [
+  [&#x27;Плановый выпуск в сутки&#x27;, 250, &#x27;кг&#x27;, &#x27;250 кг готового продукта в сутки&#x27;],
+  [&#x27;Рабочих дней в месяце&#x27;, 22, &#x27;дн&#x27;, &#x27;&#x27;],
+  [&#x27;Сублимация за 1 кг сырья&#x27;, 12000, &#x27;сум&#x27;, &#x27;своё оборудование, считается как услуга&#x27;],
+  [&#x27;Электричество на 1 кг сырья&#x27;, 4, &#x27;кВт·ч&#x27;, &#x27;&#x27;],
+  [&#x27;Тариф электричества&#x27;, 1100, &#x27;сум/кВт·ч&#x27;, &#x27;&#x27;],
+  [&#x27;Налог на прибыль&#x27;, 15, &#x27;%&#x27;, &#x27;уточнить у бухгалтера&#x27;]
+];
+const COST_DEF_OVH = [
+  [&#x27;Зарплата (с НДФЛ, соцналогом и наличными)&#x27;, 72493234, &#x27;лист «ЗП», август 2026&#x27;],
+  [&#x27;Питание сотрудников&#x27;, 3888000, &#x27;&#x27;],
+  [&#x27;Аренда&#x27;, 28000000, &#x27;&#x27;],
+  [&#x27;Коммунальные (вода, газ)&#x27;, 2854944, &#x27;электричество считается отдельно&#x27;],
+  [&#x27;Амортизация оборудования&#x27;, 8167390, &#x27;&#x27;],
+  [&#x27;Административные&#x27;, 8917027, &#x27;&#x27;],
+  [&#x27;Производственные расходы&#x27;, 1326600, &#x27;&#x27;],
+  [&#x27;Маркетинг&#x27;, 12000000, &#x27;&#x27;],
+  [&#x27;Образцы / дегустации&#x27;, 1496829, &#x27;&#x27;],
+  [&#x27;Логистика&#x27;, 6600800, &#x27;&#x27;],
+  [&#x27;Банковская комиссия&#x27;, 1137253, &#x27;&#x27;]
+];
+const COST_DEF_RAW = {&#x27;Сулугуни (сырьё)&#x27;: 70000, &#x27;Курт (сырьё)&#x27;: 75000};
+const COST_DEF_OLD = {
+  &#x27;Курт сублимированный|К-2&#x27;: [140635, &#x27;из файла: курт, партия 2&#x27;],
+  &#x27;Сулугуни сублимированный|С-2&#x27;: [147301, &#x27;из файла: сулугуни, партия 2&#x27;]
+};
+const COST_DEF_PACK1 = {&#x27;Курт 30 г&#x27;: 1427, &#x27;Сулугуни 50 г&#x27;: 1541};
+const COST_DEF_SALE = {&#x27;Курт 30 г&#x27;: 10000, &#x27;Сулугуни 50 г&#x27;: 16000};
+
+// ---------- подключение к API (оборачиваем api_ из «Коридора») ----------
+var COST_BASE_API_ = api_;
+api_ = function (b) {
+  const a = String((b &amp;&amp; b.action) || &#x27;&#x27;);
+  if (a.indexOf(&#x27;cost_&#x27;) === 0) return costApi_(b);
+  const r = COST_BASE_API_(b);
+  if (r &amp;&amp; r.ok &amp;&amp; (a === &#x27;unload&#x27; || a === &#x27;prod&#x27; || a === &#x27;del&#x27; || a === &#x27;undo&#x27;)) {
+    try { costRecalc_(); } catch (e) { console.error(e); }
+  }
+  return r;
+};
+
+function costApi_(b) {
+  try {
+    const a = b.action, d = b.data || {};
+    if (a === &#x27;cost_login&#x27;) return costLogin_(d);
+    costAuth_(b.ctoken);
+    if (a === &#x27;cost_init&#x27;) return {ok: true, data: costData_()};
+    if (a === &#x27;cost_save&#x27;) {
+      const lock = LockService.getScriptLock(); lock.waitLock(25000);
+      try { costSave_(d.items || []); } finally { lock.releaseLock(); }
+      return {ok: true, data: costData_()};
+    }
+    if (a === &#x27;cost_logout&#x27;) { const T = costTokens_(); delete T[b.ctoken]; costSaveTokens_(T); return {ok: true}; }
+    throw new Error(&#x27;Неизвестное действие.&#x27;);
+  } catch (err) {
+    const r = {ok: false, error: err.message};
+    if (err.auth) r.auth = false;
+    return r;
+  }
+}
+
+// ---------- вход владельца (свой ПИН, не как у сотрудников) ----------
+function costProps_() { return PropertiesService.getScriptProperties(); }
+function costTokens_() { return JSON.parse(costProps_().getProperty(&#x27;COST_TOKENS&#x27;) || &#x27;{}&#x27;); }
+function costSaveTokens_(T) {
+  const now = Date.now();
+  Object.keys(T).forEach(k =&gt; { if (now - T[k] &gt; COST_TOKEN_DAYS * 864e5) delete T[k]; });
+  costProps_().setProperty(&#x27;COST_TOKENS&#x27;, JSON.stringify(T));
+}
+function costAuthErr_(m) { const e = new Error(m); e.auth = true; return e; }
+function costAuth_(tok) {
+  const t = tok &amp;&amp; costTokens_()[tok];
+  if (!t || Date.now() - t &gt; COST_TOKEN_DAYS * 864e5) throw costAuthErr_(&#x27;Войдите по ПИН-коду владельца.&#x27;);
+}
+function costLogin_(d) {
+  const pin = String(d.pin || &#x27;&#x27;).trim(), P = String(costProps_().getProperty(&#x27;OWNER_PIN&#x27;) || &#x27;&#x27;).trim();
+  if (!P) { // первый вход — владелец придумывает ПИН
+    if (!d.pin2) return {ok: true, needNew: true};
+    if (!/^\d{4,8}$/.test(pin)) return {ok: false, error: &#x27;ПИН — от 4 до 8 цифр.&#x27;};
+    if (pin !== String(d.pin2).trim()) return {ok: false, error: &#x27;ПИН-коды не совпадают.&#x27;};
+    const staff = [costProps_().getProperty(&#x27;PIN&#x27;), costProps_().getProperty(&#x27;ADMIN_PIN&#x27;)].map(x =&gt; String(x || &#x27;&#x27;).trim());
+    if (staff.indexOf(pin) &gt;= 0) return {ok: false, error: &#x27;Этот ПИН уже используют сотрудники. Придумайте другой.&#x27;};
+    costProps_().setProperty(&#x27;OWNER_PIN&#x27;, pin);
+  } else if (pin !== P) { Utilities.sleep(1500); return {ok: false, error: &#x27;Неверный ПИН-код.&#x27;}; }
+  const tok = Utilities.getUuid().replace(/-/g, &#x27;&#x27;) + Utilities.getUuid().replace(/-/g, &#x27;&#x27;);
+  const T = costTokens_(); T[tok] = Date.now(); costSaveTokens_(T);
+  return {ok: true, ctoken: tok};
+}
+
+// ---------- лист «Цены» ----------
+function costSS_() { return SpreadsheetApp.getActiveSpreadsheet(); }
+function costSheet_(name) {
+  const ss = costSS_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) { sh = ss.insertSheet(name); try { sh.hideSheet(); } catch (e) {} }
+  return sh;
+}
+function costRef_() {
+  const sh = costSS_().getSheetByName(&#x27;Справочник&#x27;);
+  return sh.getRange(&#x27;A2:G&#x27;).getValues().filter(r =&gt; r[1]).map(r =&gt; ({
+    n: String(r[1]).trim(), g: String(r[2]).trim(), u: String(r[3]).trim(), w: typeof r[6] === &#x27;number&#x27; ? r[6] : null
+  }));
+}
+function costRows_(sh) {
+  const n = sh.getLastRow();
+  return n &lt; 2 ? [] : sh.getRange(2, 1, n - 1, 5).getValues();
+}
+// Добавляет недостающие строки (новые товары из справочника), значения не трогает.
+function costSyncParams_() {
+  const sh = costSheet_(COST_SH.PAR);
+  if (sh.getLastRow() &lt; 1 || sh.getRange(&#x27;A1&#x27;).getValue() !== &#x27;Раздел&#x27;) {
+    sh.getRange(1, 1, 1, 5).setValues([[&#x27;Раздел&#x27;, &#x27;Статья&#x27;, &#x27;Значение&#x27;, &#x27;Ед.&#x27;, &#x27;Комментарий&#x27;]]).setFontWeight(&#x27;bold&#x27;);
+    sh.setFrozenRows(1); sh.setColumnWidths(1, 1, 260); sh.setColumnWidths(2, 1, 320); sh.setColumnWidths(5, 1, 300);
+  }
+  const have = {};
+  costRows_(sh).forEach(r =&gt; have[r[0] + &#x27;|&#x27; + r[1]] = 1);
+  const add = [], put = (sec, item, val, unit, note) =&gt; {
+    if (have[sec + &#x27;|&#x27; + item]) return;
+    have[sec + &#x27;|&#x27; + item] = 1; add.push([sec, item, val === undefined || val === null ? &#x27;&#x27; : val, unit || &#x27;&#x27;, note || &#x27;&#x27;]);
+  };
+  COST_DEF_GEN.forEach(r =&gt; put(COST_SEC.GEN, r[0], r[1], r[2], r[3]));
+  COST_DEF_OVH.forEach(r =&gt; put(COST_SEC.OVH, r[0], r[1], &#x27;сум/мес&#x27;, r[2]));
+  const ref = costRef_();
+  ref.filter(x =&gt; x.g === &#x27;Сырьё&#x27;).forEach(x =&gt;
+    put(COST_SEC.RAW, x.n, COST_DEF_RAW[x.n], &#x27;сум/&#x27; + (x.u || &#x27;кг&#x27;), &#x27;если в «Приходе» у партии нет цены&#x27;));
+  // старые партии сублимата (начальный остаток без расчёта)
+  const gOf = {}; ref.forEach(x =&gt; gOf[x.n] = x.g);
+  const inSh = costSS_().getSheetByName(&#x27;Приход&#x27;), inN = inSh.getLastRow();
+  if (inN &gt; 1) inSh.getRange(2, 1, inN - 1, 10).getValues().forEach(r =&gt; {
+    const it = String(r[2]).trim(), bt = String(r[3]).trim();
+    if (r[1] === &#x27;Начальный остаток&#x27; &amp;&amp; it &amp;&amp; bt &amp;&amp; gOf[it] === &#x27;Сублимат (кг)&#x27;) {
+      const k = it + &#x27;|&#x27; + bt, def = COST_DEF_OLD[k] || [];
+      put(COST_SEC.OLD, k, def[0], &#x27;сум/кг&#x27;, def[1] || &#x27;уточнить&#x27;);
+    }
+  });
+  ref.filter(x =&gt; x.g === &#x27;ГП фасованная (шт)&#x27; || x.g === &#x27;ГП опт (кг)&#x27;).forEach(x =&gt; {
+    put(COST_SEC.PACK1, x.n, COST_DEF_PACK1[x.n], &#x27;сум/&#x27; + (x.u || &#x27;шт&#x27;), &#x27;пусто — считается по «Нормам» упаковки&#x27;);
+    put(COST_SEC.SALE, x.n, COST_DEF_SALE[x.n], &#x27;сум/&#x27; + (x.u || &#x27;шт&#x27;), &#x27;&#x27;);
+  });
+  ref.filter(x =&gt; x.g === &#x27;Упаковка&#x27;).forEach(x =&gt;
+    put(COST_SEC.PACKP, x.n, &#x27;&#x27;, &#x27;сум/&#x27; + (x.u || &#x27;шт&#x27;), &#x27;если в «Приходе» нет цены&#x27;));
+  if (add.length) sh.getRange(sh.getLastRow() + 1, 1, add.length, 5).setValues(add);
+  return sh;
+}
+function costParams_() {
+  const P = {};
+  costRows_(costSyncParams_()).forEach(r =&gt; {
+    const s = String(r[0]), i = String(r[1]);
+    P[s] = P[s] || {};
+    P[s][i] = typeof r[2] === &#x27;number&#x27; ? r[2] : (String(r[2]).trim() === &#x27;&#x27; ? null : Number(String(r[2]).replace(/\s/g, &#x27;&#x27;).replace(&#x27;,&#x27;, &#x27;.&#x27;)));
+    if (P[s][i] !== null &amp;&amp; isNaN(P[s][i])) P[s][i] = null;
+  });
+  return P;
+}
+function costSave_(items) {
+  const sh = costSyncParams_(), rows = costRows_(sh), idx = {};
+  rows.forEach((r, i) =&gt; idx[r[0] + &#x27;|&#x27; + r[1]] = i);
+  items.forEach(x =&gt; {
+    const i = idx[x.k]; if (i === undefined) return;
+    let v = x.v === null || x.v === undefined ? &#x27;&#x27; : String(x.v).replace(/\s/g, &#x27;&#x27;).replace(&#x27;,&#x27;, &#x27;.&#x27;);
+    if (v !== &#x27;&#x27; &amp;&amp; (isNaN(Number(v)) || Number(v) &lt; 0)) throw new Error(&#x27;Неверное число: &#x27; + x.k.split(&#x27;|&#x27;).pop() + &#x27; — «&#x27; + x.v + &#x27;»&#x27;);
+    sh.getRange(i + 2, 3).setValue(v === &#x27;&#x27; ? &#x27;&#x27; : Number(v));
+  });
+  SpreadsheetApp.flush();
+}
+
+// ---------- расчёт ----------
+function costRecalc_() {
+  const ss = costSS_(), P = costParams_(), G = P[COST_SEC.GEN] || {};
+  const g = (k, def) =&gt; (G[k] === null || G[k] === undefined ? def : G[k]);
+  const sublRate = g(&#x27;Сублимация за 1 кг сырья&#x27;, 0), kwh = g(&#x27;Электричество на 1 кг сырья&#x27;, 0), tariff = g(&#x27;Тариф электричества&#x27;, 0);
+  const tax = g(&#x27;Налог на прибыль&#x27;, 0) / 100;
+  const ovhMonth = Object.keys(P[COST_SEC.OVH] || {}).reduce((s, k) =&gt; s + (P[COST_SEC.OVH][k] || 0), 0);
+  const planKg = g(&#x27;Плановый выпуск в сутки&#x27;, 0) * g(&#x27;Рабочих дней в месяце&#x27;, 0);
+  const ovhPlan = planKg &gt; 0 ? ovhMonth / planKg : null;
+
+  const ref = costRef_(), info = {}; ref.forEach(x =&gt; info[x.n] = x);
+
+  // цены партий из «Прихода»
+  const batchPrice = {}, lastPrice = {};
+  const inSh = ss.getSheetByName(&#x27;Приход&#x27;), inN = inSh.getLastRow();
+  if (inN &gt; 1) inSh.getRange(2, 1, inN - 1, 8).getValues().forEach(r =&gt; {
+    const it = String(r[2]).trim(), bt = String(r[3]).trim(), pr = r[7];
+    if (!it || typeof pr !== &#x27;number&#x27; || pr &lt;= 0) return;
+    if (bt &amp;&amp; batchPrice[it + &#x27;|&#x27; + bt] === undefined) batchPrice[it + &#x27;|&#x27; + bt] = pr;
+    lastPrice[it] = pr;
+  });
+  const rawPrice = (it, bt) =&gt; {
+    if (bt &amp;&amp; batchPrice[it + &#x27;|&#x27; + bt] !== undefined) return {p: batchPrice[it + &#x27;|&#x27; + bt], src: &#x27;приход партии&#x27;};
+    const m = (P[COST_SEC.RAW] || {})[it];
+    if (m !== null &amp;&amp; m !== undefined) return {p: m, src: &#x27;цены&#x27;};
+    if (lastPrice[it] !== undefined) return {p: lastPrice[it], src: &#x27;последний приход&#x27;};
+    return null;
+  };
+
+  // выпуск
+  const pSh = ss.getSheetByName(&#x27;Выпуск&#x27;), pN = pSh.getLastRow();
+  const V = pN &gt; 1 ? pSh.getRange(2, 1, pN - 1, 11).getValues() : [];
+  const subl = {}, order = [], monthKg = {};
+  const mKey = d =&gt; d instanceof Date ? d.getFullYear() + &#x27;-&#x27; + (d.getMonth() + 1) : &#x27;&#x27;;
+  V.forEach(r =&gt; {
+    if (r[1] !== &#x27;Сублимация&#x27; || typeof r[4] !== &#x27;number&#x27; || r[4] &lt;= 0 || !r[2]) return;
+    const k = String(r[2]).trim() + &#x27;|&#x27; + String(r[3]).trim();
+    if (!subl[k]) { subl[k] = {date: r[0], item: String(r[2]).trim(), batch: String(r[3]).trim(), out: 0, brak: 0, raws: [], miss: []}; order.push(k); }
+    const s = subl[k];
+    s.out += r[4]; s.brak += typeof r[8] === &#x27;number&#x27; ? r[8] : 0;
+    s.raws.push({it: String(r[5]).trim(), bt: String(r[6]).trim(), q: typeof r[7] === &#x27;number&#x27; ? r[7] : 0});
+    const mk = mKey(r[0]); if (mk) monthKg[mk] = (monthKg[mk] || 0) + r[4];
+  });
+  const kgCost = {};
+  order.forEach(k =&gt; {
+    const s = subl[k];
+    s.rawKg = 0; s.rawSum = 0;
+    s.raws.forEach(x =&gt; {
+      s.rawKg += x.q;
+      const pr = rawPrice(x.it, x.bt);
+      if (pr) s.rawSum += x.q * pr.p; else s.miss.push(&#x27;нет цены: &#x27; + x.it);
+    });
+    s.sublSum = s.rawKg * sublRate; s.elecSum = s.rawKg * kwh * tariff;
+    s.direct = s.rawSum + s.sublSum + s.elecSum;
+    s.perKg = s.out &gt; 0 ? s.direct / s.out : null;
+    if (!s.miss.length) kgCost[k] = s.perKg;
+  });
+  const oldCost = P[COST_SEC.OLD] || {};
+  const sublKg = (it, bt) =&gt; {
+    const k = it + &#x27;|&#x27; + bt;
+    if (kgCost[k] !== undefined) return kgCost[k];
+    if (subl[k]) return null; // есть партия, но не хватает цен
+    return oldCost[k] !== null &amp;&amp; oldCost[k] !== undefined ? oldCost[k] : null;
+  };
+
+  // упаковка по нормам
+  const norms = {};
+  const nSh = ss.getSheetByName(&#x27;Нормы&#x27;);
+  if (nSh &amp;&amp; nSh.getLastRow() &gt; 1) nSh.getRange(2, 1, nSh.getLastRow() - 1, 3).getValues().forEach(r =&gt; {
+    if (r[0] &amp;&amp; r[1]) (norms[String(r[0]).trim()] = norms[String(r[0]).trim()] || []).push({it: String(r[1]).trim(), q: r[2]});
+  });
+  const packCost = (prod) =&gt; {
+    const m = (P[COST_SEC.PACK1] || {})[prod];
+    if (m !== null &amp;&amp; m !== undefined) return {v: m};
+    const L = norms[prod];
+    if (!L || !L.length) return {v: null, miss: &#x27;нет цены упаковки: &#x27; + prod};
+    let s = 0;
+    for (const x of L) {
+      if (typeof x.q !== &#x27;number&#x27;) return {v: null, miss: &#x27;норма упаковки не заполнена: &#x27; + x.it};
+      const pp = (P[COST_SEC.PACKP] || {})[x.it];
+      const p = pp !== null &amp;&amp; pp !== undefined ? pp : lastPrice[x.it];
+      if (p === undefined || p === null) return {v: null, miss: &#x27;нет цены упаковки: &#x27; + x.it};
+      s += x.q * p;
+    }
+    return {v: s};
+  };
+  const sale = P[COST_SEC.SALE] || {};
+
+  const out = [];
+  const fact = d =&gt; { const mk = mKey(d); return mk &amp;&amp; monthKg[mk] &gt; 0 ? ovhMonth / monthKg[mk] : null; };
+  order.forEach(k =&gt; {
+    const s = subl[k], fk = fact(s.date);
+    out.push({type: &#x27;Сублимация&#x27;, date: s.date, item: s.item, batch: s.batch, qty: s.out, unit: &#x27;кг&#x27;,
+      raw: s.raws.map(x =&gt; x.it + (x.bt ? &#x27; (&#x27; + x.bt + &#x27;)&#x27; : &#x27;&#x27;)).join(&#x27;, &#x27;), rawKg: s.rawKg,
+      rawSum: s.rawSum, sublSum: s.sublSum, elecSum: s.elecSum, pack: 0, direct: s.direct,
+      per: s.miss.length ? null : s.perKg, ovPlan: ovhPlan, ovFact: fk, kgPerUnit: 1,
+      price: null, miss: s.miss, yld: s.rawKg &gt; 0 ? s.out / s.rawKg : null});
+  });
+  V.forEach(r =&gt; {
+    if (r[1] !== &#x27;Фасовка&#x27; || typeof r[4] !== &#x27;number&#x27; || r[4] &lt;= 0 || !r[2]) return;
+    const it = String(r[2]).trim(), src = String(r[5]).trim(), bt = String(r[6]).trim();
+    const q = r[4], kg = typeof r[7] === &#x27;number&#x27; ? r[7] : 0, miss = [];
+    const ck = sublKg(src, bt);
+    if (ck === null) miss.push(&#x27;нет себестоимости сублимата: &#x27; + src + (bt ? &#x27; &#x27; + bt : &#x27;&#x27;));
+    const pk = packCost(it); if (pk.v === null) miss.push(pk.miss);
+    const w = info[it] &amp;&amp; info[it].w ? info[it].w / 1000 : (q &gt; 0 ? kg / q : 0);
+    const fk = fact(r[0]);
+    const prodSum = ck === null ? null : kg * ck;
+    const direct = prodSum === null || pk.v === null ? null : prodSum + pk.v * q;
+    out.push({type: &#x27;Фасовка&#x27;, date: r[0], item: it, batch: String(r[3]).trim(), qty: q, unit: (info[it] &amp;&amp; info[it].u) || &#x27;шт&#x27;,
+      raw: src + (bt ? &#x27; (&#x27; + bt + &#x27;)&#x27; : &#x27;&#x27;), rawKg: kg, rawSum: prodSum, sublSum: 0, elecSum: 0,
+      pack: pk.v === null ? null : pk.v * q, direct: direct, per: direct === null ? null : direct / q,
+      ovPlan: ovhPlan === null ? null : ovhPlan * w, ovFact: fk === null ? null : fk * w, kgPerUnit: w,
+      price: sale[it] === undefined ? null : sale[it], miss: miss, yld: null});
+  });
+  out.forEach(x =&gt; {
+    x.fullPlan = x.per === null || x.ovPlan === null ? null : x.per + x.ovPlan;
+    x.fullFact = x.per === null || x.ovFact === null ? null : x.per + x.ovFact;
+    if (x.price &amp;&amp; x.fullPlan !== null) {
+      const pr = x.price - x.fullPlan;
+      x.net = pr &gt; 0 ? pr * (1 - tax) : pr; x.margin = x.net / x.price;
+    } else { x.net = null; x.margin = null; }
+  });
+  out.sort((a, b) =&gt; (b.date instanceof Date ? b.date.getTime() : 0) - (a.date instanceof Date ? a.date.getTime() : 0));
+  costWrite_(out);
+  return {rows: out, ovhMonth: ovhMonth, planKg: planKg, ovhPlan: ovhPlan, monthKg: monthKg};
+}
+
+function costWrite_(rows) {
+  const sh = costSheet_(COST_SH.RES);
+  const H = [&#x27;Дата&#x27;, &#x27;Тип&#x27;, &#x27;Продукт&#x27;, &#x27;Партия&#x27;, &#x27;Выпущено&#x27;, &#x27;Ед.&#x27;, &#x27;Из чего&#x27;, &#x27;Сырьё / сублимат, кг&#x27;, &#x27;Выход&#x27;,
+    &#x27;Сырьё, сум&#x27;, &#x27;Сублимация, сум&#x27;, &#x27;Свет, сум&#x27;, &#x27;Упаковка, сум&#x27;, &#x27;Прямые затраты, сум&#x27;, &#x27;Прямая себест. 1 ед.&#x27;,
+    &#x27;Накладные 1 ед. (план)&#x27;, &#x27;Полная себест. (план)&#x27;, &#x27;Накладные 1 ед. (факт)&#x27;, &#x27;Полная себест. (факт)&#x27;,
+    &#x27;Цена продажи&#x27;, &#x27;Чистая прибыль 1 ед. (план)&#x27;, &#x27;Чистая маржа&#x27;, &#x27;Не хватает данных&#x27;];
+  sh.clear();
+  sh.getRange(1, 1, 1, H.length).setValues([H]).setFontWeight(&#x27;bold&#x27;).setWrap(true);
+  sh.setFrozenRows(1);
+  const e = v =&gt; v === null || v === undefined ? &#x27;&#x27; : v;
+  const R = rows.map(x =&gt; [x.date, x.type, x.item, x.batch, x.qty, x.unit, x.raw, x.rawKg, e(x.yld),
+    e(x.rawSum), x.sublSum || &#x27;&#x27;, x.elecSum || &#x27;&#x27;, e(x.pack), e(x.direct), e(x.per), e(x.ovPlan), e(x.fullPlan),
+    e(x.ovFact), e(x.fullFact), e(x.price), e(x.net), e(x.margin), x.miss.join(&#x27;; &#x27;)]);
+  if (R.length) {
+    sh.getRange(2, 1, R.length, H.length).setValues(R);
+    sh.getRange(2, 1, R.length, 1).setNumberFormat(&#x27;dd.mm.yyyy&#x27;);
+    sh.getRange(2, 9, R.length, 1).setNumberFormat(&#x27;0.0%&#x27;);
+    sh.getRange(2, 10, R.length, 12).setNumberFormat(&#x27;#,##0&#x27;);
+    sh.getRange(2, 22, R.length, 1).setNumberFormat(&#x27;0.0%&#x27;);
+  }
+  sh.getRange(R.length + 3, 1).setValue(&#x27;Обновлено: &#x27; + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), &#x27;dd.MM.yyyy HH:mm&#x27;) +
+    &#x27;. Лист пересчитывается сам — руками не править. Цены меняются в приложении «Себестоимость».&#x27;);
+}
+
+// ---------- данные для приложения ----------
+function costData_() {
+  const c = costRecalc_();
+  const sh = costSheet_(COST_SH.PAR), params = costRows_(sh).map(r =&gt; ({
+    s: String(r[0]), n: String(r[1]), v: r[2] === &#x27;&#x27; ? &#x27;&#x27; : r[2], u: String(r[3]), c: String(r[4])
+  }));
+  const tz = Session.getScriptTimeZone();
+  const now = new Date(), mk = now.getFullYear() + &#x27;-&#x27; + (now.getMonth() + 1);
+  return {
+    params: params,
+    rows: c.rows.slice(0, 300).map(x =&gt; Object.assign({}, x, {
+      date: x.date instanceof Date ? Utilities.formatDate(x.date, tz, &#x27;dd.MM.yyyy&#x27;) : String(x.date || &#x27;&#x27;)
+    })),
+    sum: {ovhMonth: c.ovhMonth, planKg: c.planKg, ovhPlan: c.ovhPlan, monthKg: c.monthKg[mk] || 0,
+          ovhFact: c.monthKg[mk] &gt; 0 ? c.ovhMonth / c.monthKg[mk] : null},
+    updated: Utilities.formatDate(now, tz, &#x27;dd.MM.yyyy HH:mm&#x27;)
+  };
+}
+</textarea>
+<script>
+const b=document.getElementById('b'),t=document.getElementById('t'),st=document.getElementById('st');
+b.onclick=async()=>{try{await navigator.clipboard.writeText(t.value);st.textContent='✅ Скопировано '+t.value.length+' символов';}
+catch(e){t.focus();t.select();t.setSelectionRange(0,t.value.length);document.execCommand('copy');st.textContent='✅ Скопировано (если нет — выделите текст внизу вручную)';}};
+</script></body></html>
