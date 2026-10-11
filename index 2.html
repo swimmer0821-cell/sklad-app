@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b4fa8">
+<title>Склад SUB PROFI</title>
+<script>
+/* ======================= НАСТРОЙКИ ======================= */
+const CFG = {
+  // Адрес веб-приложения Apps Script (заканчивается на /exec)
+  API_URL: 'https://script.google.com/macros/s/AKfycbyT1Q0cfAhF7HZC-UszWwxwlpWrInDGVwxhoftoRhDE0INRwYYO2xaqtYqp8QNa1kVsNw/exec',
+  APP_NAME: 'Склад SUB PROFI',
+  TIMEOUT_SEC: 40,       // сколько ждать ответа сервера
+  UNDO_MIN: 10,          // сколько минут доступна «Отменить последнюю запись»
+  EXPIRY_WARN_DAYS: 30   // партии с меньшим сроком подсвечиваются красным
+};
+/* ========================================================= */
+</script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:#eef1f5; --card:#fff; --text:#0a0a0a; --muted:#3f4652; --line:#b9c0cc;
+    --pri:#0b4fa8; --pri-bg:#e2ecff; --ok:#0a7d32; --ok-bg:#dcf3e3; --bad:#c4161c; --bad-bg:#ffe3e3;
+    --warn:#7a4300; --warn-bg:#fff0c7; --warn-line:#d99a00;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--text);font:19px/1.35 system-ui,-apple-system,Roboto,"Segoe UI",sans-serif}
+  button{font:inherit;color:inherit;cursor:pointer}
+  .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:8px 16px;background:var(--pri);color:#fff;min-height:72px}
+  .top h1{flex:1;margin:0;font-size:24px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .top .who{font-size:17px;opacity:.95;text-align:right}
+  .top .back{min-height:56px;min-width:130px;padding:0 18px;border:3px solid #fff;border-radius:14px;background:transparent;color:#fff;font-weight:800;font-size:20px}
+  .wrap{max-width:1150px;margin:0 auto;padding:16px 16px 24px}
+  h2{font-size:21px;margin:22px 4px 12px}
+  .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+  @media (min-width:900px){ .tiles{grid-template-columns:repeat(3,1fr)} }
+  .tile{min-height:160px;border-radius:20px;background:var(--card);border:3px solid var(--line);font-size:28px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px}
+  .tile .ic{font-size:48px;line-height:1}
+  .tile small{font-size:18px;font-weight:500;color:var(--muted)}
+  .tile:active{background:var(--pri-bg);border-color:var(--pri)}
+  .banner{width:100%;min-height:72px;margin-bottom:16px;border-radius:16px;padding:14px 18px;text-align:left;font-weight:700;font-size:20px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .banner.bad{background:var(--bad-bg);border:3px solid var(--bad);color:var(--bad)}
+  .banner.okb{background:var(--ok-bg);border:3px solid var(--ok);color:var(--ok)}
+  .card{background:var(--card);border-radius:16px;border:2px solid var(--line);padding:16px;margin-bottom:16px}
+  .card.missing{border:3px solid var(--warn-line);background:#fffbef}
+  .lbl{display:flex;gap:10px;align-items:center;font-size:19px;font-weight:800;margin:0 0 12px}
+  .lbl .n{display:inline-flex;align-items:center;justify-content:center;min-width:34px;height:34px;border-radius:50%;background:var(--pri);color:#fff;font-size:18px}
+  .lbl .req{color:var(--bad);font-size:16px;font-weight:700}
+  .lbl .opt-t{color:var(--muted);font-size:16px;font-weight:500}
+  .hint{font-size:17px;color:var(--muted);margin-top:8px}
+  .btn{min-height:64px;padding:10px 22px;border-radius:14px;border:3px solid var(--pri);background:var(--card);color:var(--pri);font-weight:800;font-size:20px}
+  .btn.pri{background:var(--pri);color:#fff}
+  .btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+  .btn.bad{background:var(--card);border-color:var(--bad);color:var(--bad)}
+  .btn:disabled{background:#d6dae1;border-color:#d6dae1;color:#5d6470;cursor:not-allowed}
+  .btn.wide{width:100%}
+  .row{display:flex;gap:12px;flex-wrap:wrap}.row>.btn{flex:1 1 200px}
+  .chips{display:flex;flex-wrap:wrap;gap:12px}
+  .chip{min-height:62px;min-width:62px;padding:10px 18px;border-radius:14px;border:3px solid var(--line);background:var(--card);font-size:19px;font-weight:700;text-align:center}
+  .chip.on{background:var(--pri);border-color:var(--pri);color:#fff}
+  .opt{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;min-height:70px;padding:12px 16px;margin-bottom:12px;border:3px solid var(--line);border-radius:14px;background:var(--card);text-align:left}
+  .opt.on{border-color:var(--pri);background:var(--pri-bg)}
+  .opt .nm{font-weight:700;font-size:20px}
+  .opt .sub{font-size:17px;color:var(--muted);margin-top:2px}
+  .opt .q{font-weight:800;font-size:21px;white-space:nowrap}
+  .tag{display:inline-block;font-size:15px;font-weight:800;padding:3px 9px;border-radius:8px;margin-right:6px}
+  .tag.fefo{background:var(--ok-bg);color:var(--ok)} .tag.bad{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
+  .sel{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .sel .nm{font-size:23px;font-weight:800}
+  .sel .sub{font-size:17px;color:var(--muted)}
+  input.search,input.txt,input.date{width:100%;min-height:66px;font-size:22px;padding:12px 16px;border:3px solid var(--pri);border-radius:14px;background:#fff;color:var(--text)}
+  .qbox{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:78px;padding:10px 18px;border:3px solid var(--pri);border-radius:14px;background:#fff;text-align:left}
+  .qbox .v{font-size:34px;font-weight:800}
+  .qbox .v.empty{font-size:22px;font-weight:600;color:var(--muted)}
+  .qbox .u{font-size:22px;font-weight:700;color:var(--muted)}
+  .msg{border-radius:12px;padding:12px 16px;font-weight:700;margin-top:12px;font-size:18px}
+  .msg.warn{background:var(--warn-bg);color:var(--warn);border:2px solid var(--warn-line)}
+  .msg.bad{background:var(--bad-bg);color:var(--bad);border:2px solid var(--bad)}
+  .msg.ok{background:var(--ok-bg);color:var(--ok);border:2px solid var(--ok)}
+  .msg.info{background:var(--pri-bg);color:var(--pri);border:2px solid var(--pri)}
+  .foot{position:sticky;bottom:0;z-index:4;background:var(--bg);padding:12px 0 calc(12px + env(safe-area-inset-bottom));border-top:2px solid var(--line)}
+  .foot .miss{font-size:17px;font-weight:700;color:var(--warn);margin-bottom:10px}
+  .grid2{display:block}
+  @media (min-width:900px) and (orientation:landscape){ .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;align-items:start} }
+  .ovl{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+  .ovl.mid{align-items:center}
+  .sheet{background:var(--card);width:100%;max-width:680px;border-radius:22px 22px 0 0;padding:20px 20px calc(20px + env(safe-area-inset-bottom));max-height:96vh;overflow:auto}
+  .ovl.mid .sheet{border-radius:22px;margin:16px}
+  .sheet h3{margin:0 0 14px;font-size:24px}
+  .disp{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:46px;font-weight:800;padding:10px 18px;border:3px solid var(--pri);border-radius:14px;margin-bottom:14px;min-height:80px}
+  .disp .u{font-size:24px;color:var(--muted)}
+  .keys{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .key{min-height:74px;font-size:32px;font-weight:800;border-radius:14px;border:2px solid var(--line);background:#f5f6f8}
+  .key:active{background:var(--pri-bg)}
+  .key.alt{font-size:24px;background:#e9edf3}
+  .sum{width:100%;border-collapse:collapse;font-size:22px;margin-bottom:8px}
+  .sum td{padding:10px 6px;border-bottom:2px solid #e3e6eb;vertical-align:top}
+  .sum td:first-child{color:var(--muted);font-size:18px;width:38%}
+  .sum td:last-child{font-weight:800}
+  .big-ok{font-size:40px;font-weight:900;color:var(--ok);margin:4px 0 10px}
+  .big-bad{font-size:36px;font-weight:900;color:var(--bad);margin:4px 0 10px}
+  .pre{white-space:pre-wrap;font-size:19px;background:#f5f6f8;border-radius:12px;padding:12px 14px;margin-bottom:14px}
+  .spin{width:64px;height:64px;border-radius:50%;border:7px solid #d6dfef;border-top-color:var(--pri);animation:s .9s linear infinite;margin:6px auto 16px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .center{text-align:center}
+  .empty{text-align:center;color:var(--muted);padding:28px 10px;font-size:19px}
+  .pinbox{font-size:52px;letter-spacing:18px;text-align:center;min-height:80px;border:3px solid var(--pri);border-radius:14px;margin-bottom:14px;padding:6px}
+  .list-sm{font-size:18px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="layer"></div>
+
+<script>
+/* ---------------- служебное ---------------- */
+const TG = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) ? Telegram.WebApp : null;
+const REASON_REQ = ['Брак', 'Потеря/усушка', 'Списание (срок)', 'Недостача (инвентаризация)'];
+const SELL = ['Отгрузка дистрибьютору', 'Продажа', 'Маркетплейс', 'Образец/промо'];
+const PACK = 'Упаковка', PACKED = 'ГП фасованная (шт)';
+const S = {items: [], stock: [], checks: [], expiry: [], lastBatch: {}, recent: {from: [], to: {}}, types: {in: [], out: []}, groups: [],
+           who: '', admin: false, bc: {}, token: ls('sklad_token') || '', lastWrite: JSON.parse(ls('sklad_last') || 'null')};
+let SCR = 'home', F = {}, OPTS = {}, PICKG = {};
+const app = document.getElementById('app'), layer = document.getElementById('layer');
+
+function ls(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { return null; } }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const num = v => { const x = parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.')); return isNaN(x) ? NaN : x; };
+const r3 = x => Math.round(x * 1000) / 1000;
+const fmt = n => typeof n === 'number' ? n.toLocaleString('ru-RU', {maximumFractionDigits: 3}) : (n === '' || n == null ? '—' : esc(n));
+const isoD = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
+const today = () => isoD(new Date());
+const daysAgo = n => isoD(new Date(Date.now() - n * 864e5));
+const ru = s => s ? s.split('-').reverse().join('.') : '';
+const ddmmyy = s => { const p = s.split('-'); return p[2] + p[1] + p[0].slice(2); };
+const itemBy = n => S.items.find(i => i.n === n);
+const stockOf = n => S.stock.find(s => s.n === n);
+const stockQ = n => { const s = stockOf(n); return s && typeof s.q === 'number' ? s.q : 0; };
+const isPack = it => it && it.g === PACK;
+const rid = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+function haptic(t) { try { TG.HapticFeedback.notificationOccurred(t); } catch (e) {} }
+
+/* ---------------- связь с сервером ---------------- */
+async function api(action, data, id) {
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), CFG.TIMEOUT_SEC * 1000);
+  let r;
+  try {
+    r = await fetch(CFG.API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, signal: ctrl.signal,
+      body: JSON.stringify({action, data: data || {}, rid: id, initData: TG ? TG.initData : '', token: TG ? '' : S.token})});
+  } catch (e) {
+    throw mkErr(e.name === 'AbortError' ? 'Сервер не ответил за ' + CFG.TIMEOUT_SEC + ' секунд.' : 'Нет связи с интернетом.', 'net');
+  } finally { clearTimeout(timer); }
+  let j;
+  try { j = await r.json(); } catch (e) { throw mkErr('Сервер ответил непонятно (код ' + r.status + ').', 'net'); }
+  if (!j.ok) throw mkErr(j.error || 'Неизвестная ошибка', j.auth === false ? 'auth' : '');
+  return j;
+}
+function mkErr(m, kind) { const e = new Error(m); e.kind = kind; return e; }
+
+// Запрос с индикатором загрузки и кнопкой «Повторить» при обрыве связи.
+// Для записи номер запроса (rid) один и тот же при повторе — сервер не создаст дубль.
+async function call(action, data, o) {
+  o = o || {};
+  const id = o.write ? rid() : undefined;
+  for (;;) {
+    showLoader(o.msg || 'Загрузка…', o.write);
+    try { const j = await api(action, data, id); hideLayer(); return j; }
+    catch (e) {
+      hideLayer();
+      if (e.kind === 'auth') { authFail(e.message); throw e; }
+      if (e.kind === 'net') { if (await netDialog(e.message, o.write)) continue; }
+      throw e;
+    }
+  }
+}
+
+/* ---------------- слои: загрузка, диалоги, клавиатура ---------------- */
+function hideLayer() { layer.innerHTML = ''; }
+function showLoader(text, write) {
+  layer.innerHTML = `<div class="ovl mid"><div class="sheet center"><div class="spin"></div><h3>${esc(text)}</h3>
+    ${write ? '<div class="hint">Не закрывайте приложение и не нажимайте повторно.</div>' : ''}</div></div>`;
+}
+function dialog(html, buttons) { // buttons: [{t, cls, v}]
+  return new Promise(res => {
+    layer.innerHTML = `<div class="ovl mid"><div class="sheet">${html}<div class="row" style="margin-top:16px">${
+      buttons.map((b, i) => `<button class="btn ${b.cls || ''}" data-dlg="${i}">${b.t}</button>`).join('')}</div></div></div>`;
+    layer.querySelectorAll('[data-dlg]').forEach(el => el.onclick = () => { hideLayer(); res(buttons[+el.dataset.dlg].v); });
+  });
+}
+const ask = (text, yes, no) => dialog(`<h3>${esc(text)}</h3>`, [{t: no || 'Нет', v: false}, {t: yes || 'Да', cls: 'pri', v: true}]);
+const netDialog = (m, write) => dialog(`<h3>📶 Нет связи</h3><div class="msg bad">${esc(m)}</div>
+  <div class="hint" style="margin-top:12px">${write ? 'Нажмите «Повторить». Если запись уже дошла, дубль не появится.' : 'Проверьте интернет и нажмите «Повторить».'}</div>`,
+  [{t: 'Отмена', v: false}, {t: '↻ Повторить', cls: 'pri', v: true}]);
+
+// Числовая клавиатура
+let KP = null;
+function keypad(key, title, unit, int) {
+  KP = {key, title, unit, int, v: String(getV(key) || '')};
+  drawKeypad();
+}
+function drawKeypad() {
+  const k = (t, a, cls) => `<button class="key ${cls || ''}" data-kp="${a}">${t}</button>`;
+  layer.innerHTML = `<div class="ovl"><div class="sheet"><h3>${esc(KP.title)}</h3>
+    <div class="disp"><span>${esc(KP.v || '0')}</span><span class="u">${esc(KP.unit || '')}</span></div>
+    <div class="keys">${['7', '8', '9', '4', '5', '6', '1', '2', '3'].map(d => k(d, d)).join('')}
+      ${KP.int ? k('', 'none', 'alt') : k(',', ',')}${k('0', '0')}${k('⌫', 'del', 'alt')}
+      ${k('−1', 'm1', 'alt')}${k('Очистить', 'clr', 'alt')}${k('+1', 'p1', 'alt')}</div>
+    <div class="row" style="margin-top:14px"><button class="btn" data-kp="cancel">Отмена</button><button class="btn ok" data-kp="ok">Готово ✓</button></div>
+  </div></div>`;
+}
+function kpPress(a) {
+  let v = KP.v;
+  if (/^\d$/.test(a)) { if (v.replace(',', '').length < 9) v = (v === '0' ? '' : v) + a; }
+  else if (a === ',') { if (!v.includes(',')) v = (v || '0') + ','; }
+  else if (a === 'del') v = v.slice(0, -1);
+  else if (a === 'clr') v = '';
+  else if (a === 'p1' || a === 'm1') {
+    const x = Math.max(0, r3((num(v) || 0) + (a === 'p1' ? 1 : -1)));
+    v = String(x).replace('.', ',');
+  } else if (a === 'cancel') { KP = null; hideLayer(); return; }
+  else if (a === 'ok') { setV(KP.key, v.replace(/,$/, '')); KP = null; hideLayer(); render(); return; }
+  else return;
+  KP.v = v; drawKeypad();
+}
+// Ввод текста (номер партии, другой получатель, имя)
+function textInput(title, value, onDone, hint) {
+  layer.innerHTML = `<div class="ovl mid"><div class="sheet"><h3>${esc(title)}</h3>
+    <input class="txt" id="ti" value="${esc(value || '')}" autocomplete="off">
+    ${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
+    <div class="row" style="margin-top:16px"><button class="btn" id="tic">Отмена</button><button class="btn ok" id="tio">Готово ✓</button></div></div></div>`;
+  const inp = document.getElementById('ti'); setTimeout(() => inp.focus(), 50);
+  document.getElementById('tic').onclick = hideLayer;
+  document.getElementById('tio').onclick = () => { const v = inp.value.trim(); hideLayer(); onDone(v); render(); };
+}
+
+/* ---------------- значения полей формы ---------------- */
+function getV(key) { if (key.startsWith('fact-')) return (F.facts || {})[key.slice(5)]; return F[key]; }
+function setV(key, v) { F.dirty = true; if (key.startsWith('fact-')) { F.facts[key.slice(5)] = v; } else F[key] = v; }
+
+/* ---------------- навигация ---------------- */
+const TITLES = {home: CFG.APP_NAME, in: '📥 Приход', out: '📤 Расход', prod: '🏭 Выпуск', stock: '📋 Остатки', inv: '🧮 Инвентаризация', attn: '⚠ Внимание', login: CFG.APP_NAME, err: CFG.APP_NAME};
+function go(scr, keep) {
+  SCR = scr; F = Object.assign({dirty: false}, keep || {}); OPTS = {}; PICKG = {};
+  if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), qty: '', from: '', price: ''});
+  if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
+  if (scr === 'prod') Object.assign(F, {item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: ''});
+  if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
+  if (scr === 'stock') Object.assign(F, {q: '', g: 'Все', all: false, open: {}});
+  render(); window.scrollTo(0, 0);
+}
+async function back() {
+  if (F.dirty && !(await ask('Выйти без записи? Введённые данные пропадут.', 'Выйти', 'Остаться'))) return;
+  go('home');
+}
+if (TG) {
+  TG.ready(); TG.expand();
+  try { TG.disableVerticalSwipes && TG.disableVerticalSwipes(); TG.setHeaderColor && TG.setHeaderColor('#0b4fa8'); } catch (e) {}
+  TG.BackButton.onClick(back);
+}
+
+/* ---------------- отрисовка ---------------- */
+function topBar() {
+  const home = SCR === 'home' || SCR === 'login' || SCR === 'err';
+  if (TG) { home ? TG.BackButton.hide() : TG.BackButton.show(); }
+  return `<div class="top">${home ? '' : '<button class="back" data-a="back">← Назад</button>'}
+    <h1>${esc(TITLES[SCR] || '')}</h1><div class="who">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
+}
+function render() {
+  const v = ({home: vHome, in: vIn, out: vOut, prod: vProd, stock: vStock, inv: vInv, attn: vAttn, login: vLogin, err: vErr})[SCR];
+  app.innerHTML = topBar() + '<div class="wrap">' + v() + '</div>';
+  if (SCR === 'stock') drawStockList();
+  document.querySelectorAll('[data-res]').forEach(el => drawPickRes(el.dataset.res));
+}
+const lbl = (n, t, req) => `<div class="lbl"><span class="n">${n}</span>${t}${req === true ? ' <span class="req">обязательно</span>' : req === false ? ' <span class="opt-t">(можно не заполнять)</span>' : ''}</div>`;
+function card(n, t, body, req, missing) { return `<div class="card ${missing ? 'missing' : ''}">${lbl(n, t, req)}${body}</div>`; }
+function chips(key, list, cur, extra) {
+  OPTS[key] = list;
+  return `<div class="chips">${list.map((x, i) => `<button class="chip ${x === cur ? 'on' : ''}" data-a="opt:${key}:${i}">${esc(x)}</button>`).join('')}${extra || ''}</div>`;
+}
+function qbox(key, title, unit, int) {
+  const v = getV(key);
+  return `<button class="qbox" data-a="kp:${key}:${int ? 1 : 0}" data-t="${esc(title)}" data-u="${esc(unit || '')}">
+    <span class="v ${v ? '' : 'empty'}">${v ? esc(v) : 'Нажмите, чтобы ввести'}</span><span class="u">${esc(unit || '')}</span></button>`;
+}
+const unitInt = u => u === 'шт';
+
+/* ----- выбор товара: поиск с подсказками ----- */
+function picker(key, groups) {
+  PICKG[key] = groups;
+  const it = F[key];
+  if (it) {
+    return `<div class="sel"><div><div class="nm">${esc(it.n)}</div><div class="sub">${esc(it.g)} · на складе: <b>${fmt(stockQ(it.n))} ${esc(it.u)}</b></div></div>
+      <button class="btn" data-a="unpick:${key}">Сменить</button></div>`;
+  }
+  const rec = (JSON.parse(ls('sklad_recent') || '[]')).map(itemBy).filter(i => i && (!groups || groups.includes(i.g))).slice(0, 8);
+  OPTS['rec_' + key] = rec;
+  return `<input class="search" data-search="${key}" placeholder="🔍 Начните вводить название…" autocomplete="off" value="${esc(F['q_' + key] || '')}">
+    <div data-res="${key}" style="margin-top:12px"></div>
+    ${rec.length ? `<div class="hint" style="margin:6px 0 10px">Недавние:</div><div class="chips">${rec.map((i, k) => `<button class="chip" data-a="recpick:${key}:${k}">${esc(i.n)}</button>`).join('')}</div>` : ''}`;
+}
+function drawPickRes(key) {
+  const box = document.querySelector(`[data-res="${key}"]`); if (!box) return;
+  const q = String(F['q_' + key] || '').toLowerCase().split(/\s+/).filter(Boolean), g = PICKG[key];
+  if (!q.length) { box.innerHTML = ''; return; }
+  const res = S.items.map((it, i) => ({it, i})).filter(x => (!g || g.includes(x.it.g)) && q.every(w => x.it.n.toLowerCase().includes(w))).slice(0, 8);
+  box.innerHTML = res.length ? res.map(x => `<button class="opt" data-a="pick:${key}:${x.i}"><div><div class="nm">${esc(x.it.n)}</div><div class="sub">${esc(x.it.g)}</div></div>
+    <div class="q">${fmt(stockQ(x.it.n))} ${esc(x.it.u)}</div></button>`).join('') : '<div class="msg warn">Ничего не найдено. Проверьте название или добавьте товар в Справочник таблицы.</div>';
+}
+async function onPick(key, it) {
+  F[key] = it; F['q_' + key] = ''; F.dirty = true;
+  const rec = JSON.parse(ls('sklad_recent') || '[]').filter(n => n !== it.n); rec.unshift(it.n); ls('sklad_recent', JSON.stringify(rec.slice(0, 20)));
+  if (SCR === 'in') { F.bManual = false; }
+  if ((SCR === 'out' && key === 'item') || (SCR === 'prod' && key === 'raw') || (SCR === 'inv' && key === 'item')) {
+    F.bs = null; F.sel = 0; F.facts = {};
+    if (!isPack(it)) F.bs = await loadBatches(it.n); else F.bs = [];
+  }
+  render();
+}
+async function loadBatches(name) {
+  if (S.bc[name]) return S.bc[name];
+  try { const j = await call('batches', {name}, {msg: 'Загружаю партии…'}); S.bc[name] = j.data; return j.data; }
+  catch (e) { if (e.kind !== 'auth') await dialog(`<div class="big-bad">Ошибка</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); return []; }
+}
+
+/* ----- выбор партии (FEFO) ----- */
+function batchOpts(bs, unit, sel, label) {
+  if (!bs) return '<div class="hint">Загрузка партий…</div>';
+  if (!bs.length) return '<div class="msg bad">Нет партий с остатком.</div>';
+  const one = (b, i) => {
+    const t = (i === 0 ? '<span class="tag fefo">★ Ближайший срок</span>' : '') +
+      (b.d != null && b.d < 0 ? '<span class="tag bad">ПРОСРОЧЕНА</span>' : b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? `<span class="tag bad">срок ${b.d} дн</span>` : '');
+    return `<button class="opt ${sel === i ? 'on' : ''}" data-a="bsel:${i}"><div><div>${t}</div><div class="nm">Партия ${esc(b.b || 'без номера')}</div>
+      <div class="sub">годен до ${esc(b.exp || '—')}</div></div><div class="q">${fmt(b.q)} ${esc(unit)}</div></button>`;
+  };
+  let h = bs.map(one).join('');
+  if (bs.length > 1) h += `<button class="opt ${sel === 'auto' ? 'on' : ''}" data-a="bsel:auto"><div><div class="nm">Из нескольких партий</div>
+    <div class="sub">${label || 'спишется по сроку: сначала ближайший'}</div></div><div class="q">${fmt(r3(bs.reduce((s, b) => s + b.q, 0)))} ${esc(unit)}</div></button>`;
+  if (typeof sel === 'number' && sel > 0) h += `<div class="msg warn">⚠ Не по сроку (FEFO): есть партия ${esc(bs[0].b)} со сроком до ${esc(bs[0].exp)}. Берите её, если нет особой причины.</div>`;
+  return h;
+}
+function available(it, bs, sel) {
+  if (!it) return null;
+  if (isPack(it) || (bs && !bs.length)) return stockQ(it.n);
+  if (!bs) return null;
+  return sel === 'auto' ? r3(bs.reduce((s, b) => s + b.q, 0)) : (bs[sel] ? bs[sel].q : 0);
+}
+function allocText(bs, q) {
+  let rest = q; const out = [];
+  for (const b of bs) { if (rest <= 1e-9) break; const t = Math.min(rest, b.q); out.push(b.b + ': ' + fmt(r3(t))); rest -= t; }
+  return out.join(', ');
+}
+
+/* ================= ГЛАВНАЯ ================= */
+function vHome() {
+  const bad = S.checks.filter(c => c.n > 0);
+  const banner = bad.length
+    ? `<button class="banner bad" data-a="go:attn"><span>⚠ Требует внимания: ${bad.length} ${bad.length === 1 ? 'проверка' : 'проверки'}<br><span style="font-weight:500;font-size:17px">${esc(bad.slice(0, 2).map(c => c.t + ' — ' + c.n).join(' · '))}</span></span><span>Открыть →</span></button>`
+    : `<button class="banner okb" data-a="go:attn"><span>✅ Проблем не найдено</span><span>Сроки и проверки →</span></button>`;
+  const lw = S.lastWrite, left = lw && lw.undo ? Math.ceil((lw.at + CFG.UNDO_MIN * 60000 - Date.now()) / 60000) : 0;
+  const undo = left > 0 ? `<div class="card"><div class="hint" style="margin:0 0 10px">Последняя запись: ${esc(lw.text.split('\n')[0])}</div>
+    <button class="btn bad wide" data-a="undo">↩ Отменить последнюю запись (ещё ${left} мин)</button></div>` : '';
+  const t = (scr, ic, name, sub) => `<button class="tile" data-a="go:${scr}"><span class="ic">${ic}</span>${name}<small>${sub}</small></button>`;
+  return banner + `<div class="tiles">
+    ${t('in', '📥', 'Приход', 'закупка, возврат')}
+    ${t('out', '📤', 'Расход', 'отгрузка, брак, списание')}
+    ${t('prod', '🏭', 'Выпуск', 'сублимация, фасовка')}
+    ${t('stock', '📋', 'Остатки', 'что есть на складе')}
+    ${t('inv', '🧮', 'Инвентаризация', 'пересчёт по факту')}
+  </div>` + '<div style="height:16px"></div>' + undo;
+}
+
+/* ================= ПРИХОД ================= */
+function suggestBatch(it, dateISO) {
+  const last = S.lastBatch[it.n]; if (!last) return '';
+  let m = last.match(/^(.*?)(\d{6})$/); if (m && dateISO) return m[1] + ddmmyy(dateISO);
+  m = last.match(/^(.*?)(\d+)$/); if (m) return m[1] + (+m[2] + 1);
+  return '';
+}
+function vIn() {
+  const it = F.item, pack = isPack(it), V = vIn_valid();
+  if (it && !pack && !F.bManual) F.batch = suggestBatch(it, F.date);
+  const types = S.types.in.filter(t => t !== 'Начальный остаток' && t !== 'Излишек (инвентаризация)');
+  let n = 1, h = '<div class="grid2"><div>';
+  h += card(n++, 'Тип прихода', chips('type', types, F.type), true);
+  h += card(n++, 'Товар', picker('item', null), true, V.m.item);
+  if (it && !pack) {
+    const last = S.lastBatch[it.n];
+    h += card(n++, 'Номер партии', F.batch
+      ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div>
+         <div class="hint">${F.bManual ? 'Введён вручную.' : 'Предложен по прошлой партии (' + esc(last) + '). Проверьте по накладной/этикетке.'}</div>`
+      : `<button class="btn pri wide" data-a="editbatch">Ввести номер партии</button><div class="hint">Для этого товара ещё не было партий — введите номер с этикетки или накладной.</div>`, true, V.m.batch);
+    const d = F.date, dd = [[today(), 'Сегодня'], [daysAgo(1), 'Вчера'], [daysAgo(2), 'Позавчера']];
+    h += card(n++, 'Дата производства', `<div class="chips">${dd.map(x => `<button class="chip ${d === x[0] ? 'on' : ''}" data-a="setdate:${x[0]}">${x[1]}<br><small>${ru(x[0])}</small></button>`).join('')}</div>
+      <div class="hint" style="margin:12px 0 6px">Другая дата:</div><input class="date" type="date" data-date="date" value="${esc(d)}" max="${today()}">`, true, V.m.date);
+  }
+  h += '</div><div>';
+  h += card(n++, 'Количество', it ? qbox('qty', 'Количество: ' + it.n, it.u, unitInt(it.u)) : '<div class="hint">Сначала выберите товар.</div>', true, V.m.qty);
+  const fromList = S.recent.from || [], other = F.from && !fromList.includes(F.from);
+  h += card(n++, 'Откуда / поставщик', chips('from', fromList, F.from,
+    `<button class="chip ${other ? 'on' : ''}" data-a="otherfrom">${other ? esc(F.from) : 'Другой…'}</button>${F.from ? '<button class="chip" data-a="clr:from">✕ Не указывать</button>' : ''}`), false);
+  h += card(n++, 'Цена за единицу', qbox('price', 'Цена за 1 ' + (it ? it.u : 'ед.'), 'сум', true) +
+    (F.price && F.qty ? `<div class="msg info">Сумма: ${fmt(Math.round(num(F.price) * num(F.qty)))} сум</div>` : ''), false);
+  h += '</div></div>';
+  return h + foot(V);
+}
+function vIn_valid() {
+  const it = F.item, pack = isPack(it), m = {}, miss = [], block = [], warn = [];
+  if (!it) { m.item = 1; miss.push('товар'); }
+  if (it && !pack && !F.batch) { m.batch = 1; miss.push('номер партии'); }
+  if (it && !pack && !F.date) { m.date = 1; miss.push('дата производства'); }
+  if (!(num(F.qty) > 0)) { m.qty = 1; miss.push('количество'); }
+  if (F.date && F.date > today()) block.push('Дата производства не может быть в будущем.');
+  const sum = it ? [['Операция', 'Приход · ' + F.type], ['Товар', it.n], ...(pack ? [] : [['Партия', F.batch], ['Дата производства', ru(F.date)]]),
+    ['Количество', fmt(num(F.qty)) + ' ' + it.u], ['Откуда', F.from || '—'], ...(F.price ? [['Цена / сумма', fmt(num(F.price)) + ' сум · итого ' + fmt(Math.round(num(F.price) * num(F.qty))) + ' сум']] : [])] : [];
+  return {m, miss, block, warn, sum, action: 'in', data: it ? {type: F.type, item: it.n, qty: F.qty, batch: pack ? '' : F.batch, date: pack ? '' : ru(F.date), from: F.from, price: F.price} : null};
+}
+
+/* ================= РАСХОД ================= */
+function vOut() {
+  const it = F.item, pack = isPack(it), V = vOut_valid();
+  const types = S.types.out.filter(t => t !== 'Недостача (инвентаризация)');
+  let n = 1, h = '<div class="grid2"><div>';
+  h += card(n++, 'Тип расхода', chips('type', types, F.type), true);
+  h += card(n++, 'Товар', picker('item', null), true, V.m.item);
+  if (it && !pack) h += card(n++, 'Партия', batchOpts(F.bs, it.u, F.sel), true, V.m.batch);
+  h += '</div><div>';
+  if (it) {
+    const av = available(it, F.bs, F.sel);
+    h += card(n++, 'Количество', qbox('qty', 'Количество: ' + it.n, it.u, unitInt(it.u)) +
+      (av != null ? `<div class="hint">Доступно: <b>${fmt(av)} ${esc(it.u)}</b></div>` : '') +
+      (V.over ? `<div class="msg bad">⛔ Столько нет. Доступно только ${fmt(av)} ${esc(it.u)}.${F.sel !== 'auto' && F.bs && F.bs.length > 1 && num(F.qty) <= available(it, F.bs, 'auto') ? ' Выберите «Из нескольких партий».' : ''}</div>` : '') +
+      (F.sel === 'auto' && num(F.qty) > 0 && !V.over && F.bs && F.bs.length ? `<div class="msg info">Спишется: ${esc(allocText(F.bs, num(F.qty)))}</div>` : ''), true, V.m.qty);
+  }
+  const req = REASON_REQ.includes(F.type), list = (S.recent.to || {})[F.type] || [], other = F.reason && !list.includes(F.reason);
+  h += card(n++, req ? 'Причина' : (SELL.includes(F.type) ? 'Кому' : 'Кому / причина'), chips('reason', list, F.reason,
+    `<button class="chip ${other ? 'on' : ''}" data-a="otherreason">${other ? esc(F.reason) : (list.length ? 'Другое…' : 'Ввести…')}</button>`) +
+    (req ? '<div class="hint">Брак и потери записываются отдельной строкой — причина обязательна.</div>' : ''), req ? true : false, V.m.reason);
+  h += '</div></div>';
+  return h + foot(V);
+}
+function vOut_valid() {
+  const it = F.item, pack = isPack(it), m = {}, miss = [], block = [], warn = [];
+  if (!it) { m.item = 1; miss.push('товар'); }
+  if (it && !pack && F.bs && !F.bs.length) block.push('Нет партий с остатком — расход невозможен.');
+  const q = num(F.qty);
+  if (!(q > 0)) { m.qty = 1; miss.push('количество'); }
+  const av = available(it, F.bs, F.sel), over = it && q > 0 && av != null && q > av + 1e-9;
+  if (over) block.push('Количество больше остатка.');
+  if (REASON_REQ.includes(F.type) && !F.reason) { m.reason = 1; miss.push('причина'); }
+  const b = !it || pack || !F.bs || !F.bs.length ? null : F.sel === 'auto' ? null : F.bs[F.sel];
+  if (b && b.d != null && b.d < 0 && SELL.includes(F.type)) block.push('Партия ' + b.b + ' просрочена — продавать нельзя. Оформите «Списание (срок)».');
+  if (typeof F.sel === 'number' && F.sel > 0 && F.bs && F.bs[0]) warn.push('Не по сроку (FEFO): есть партия ' + F.bs[0].b + ' до ' + F.bs[0].exp);
+  const bTxt = pack ? '—' : (F.sel === 'auto' && F.bs ? allocText(F.bs, q || 0) : (b ? b.b + ' (до ' + b.exp + ')' : '—'));
+  const sum = it ? [['Операция', 'Расход · ' + F.type], ['Товар', it.n], ['Партия', bTxt], ['Количество', fmt(q) + ' ' + it.u],
+    [REASON_REQ.includes(F.type) ? 'Причина' : 'Кому / причина', F.reason || '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]] : [];
+  return {m, miss, block, warn, sum, over, action: 'out',
+    data: it ? {type: F.type, item: it.n, qty: F.qty, reason: F.reason, batch: pack || F.sel === 'auto' || !b ? '' : b.b} : null};
+}
+
+/* ================= ВЫПУСК ================= */
+const PROD_G = ['Сублимат (кг)', 'ГП опт (кг)', PACKED], RAW_G = ['Сырьё', 'Сублимат (кг)', 'ГП опт (кг)'];
+function vProd() {
+  const it = F.item, raw = F.raw, V = vProd_valid();
+  if (!F.bManual) F.batch = prodBatch();
+  let n = 1, h = '<div class="grid2"><div>';
+  h += card(n++, 'Что получили (продукт)', picker('item', PROD_G), true, V.m.item);
+  h += card(n++, 'Из чего (сырьё)', picker('raw', RAW_G), true, V.m.raw);
+  if (raw && !isPack(raw)) h += card(n++, 'Партия сырья', batchOpts(F.bs, raw.u, F.sel), true);
+  h += '</div><div>';
+  if (raw) {
+    const av = available(raw, F.bs, F.sel);
+    h += card(n++, 'Сколько сырья взяли', qbox('rawQty', 'Сырьё: ' + raw.n, raw.u, unitInt(raw.u)) +
+      (av != null ? `<div class="hint">Доступно: <b>${fmt(av)} ${esc(raw.u)}</b></div>` : '') +
+      (V.over ? `<div class="msg bad">⛔ Столько сырья нет. Доступно ${fmt(av)} ${esc(raw.u)}.</div>` : ''), true, V.m.rawQty);
+  }
+  if (it) h += card(n++, 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
+  if (it && raw) h += card(n++, 'Партия продукта', F.batch
+    ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div><div class="hint">${F.bManual ? 'Введена вручную.' : 'Совпадает с партией сырья — так сохраняется прослеживаемость.'}</div>`
+    : '<button class="btn pri wide" data-a="editbatch">Ввести номер партии</button>', true, V.m.batch);
+  if (it && raw) h += card(n++, 'Брак при производстве, кг', qbox('brak', 'Брак, кг', 'кг', false), false);
+  h += '</div></div>';
+  return h + foot(V);
+}
+function prodBatch() {
+  if (!F.bs || !F.bs.length) return F.batch || '';
+  const b = F.sel === 'auto' ? F.bs[0] : F.bs[F.sel];
+  return b ? b.b : '';
+}
+function vProd_valid() {
+  const it = F.item, raw = F.raw, m = {}, miss = [], block = [], warn = [];
+  if (!it) { m.item = 1; miss.push('продукт'); }
+  if (!raw) { m.raw = 1; miss.push('сырьё'); }
+  const rq = num(F.rawQty), q = num(F.qty);
+  if (raw && !(rq > 0)) { m.rawQty = 1; miss.push('сколько сырья'); }
+  if (it && !(q > 0)) { m.qty = 1; miss.push('сколько получили'); }
+  if (it && raw && !F.batch) { m.batch = 1; miss.push('партия продукта'); }
+  if (it && raw && it.n === raw.n) block.push('Продукт и сырьё — один и тот же товар.');
+  const av = available(raw, F.bs, F.sel), over = raw && rq > 0 && av != null && rq > av + 1e-9;
+  if (over) block.push('Сырья меньше, чем указано.');
+  if (raw && !isPack(raw) && F.bs && !F.bs.length && !(stockQ(raw.n) > 0)) block.push('Этого сырья нет на складе.');
+  if (typeof F.sel === 'number' && F.sel > 0 && F.bs && F.bs[0]) warn.push('Сырьё не по сроку (FEFO): есть партия ' + F.bs[0].b + ' до ' + F.bs[0].exp);
+  const brak = num(F.brak);
+  if (F.brak && !(brak >= 0)) block.push('Неверный брак.');
+  const isPk = it && it.g === PACKED;
+  let check = '', checkBad = false;
+  if (it && rq > 0 && q > 0) {
+    if (isPk) { const g = rq * 1000 / q; checkBad = !!(it.w && g > it.w * 1.01); check = 'Вес 1 шт по факту: ' + g.toFixed(1) + ' г' + (it.w ? (checkBad ? ' — ⚠ больше нормы ' + it.w + ' г (перевес)' : ' · норма ' + it.w + ' г') : ' · норма не задана'); }
+    else { const y = q / rq; checkBad = !!(it.y && y < it.y * 0.95); check = 'Выход: ' + (y * 100).toFixed(1) + '%' + (it.y ? (checkBad ? ' — ⚠ ниже нормы ' + Math.round(it.y * 100) + '%' : ' · норма ' + Math.round(it.y * 100) + '%') : ' · норма не задана'); }
+    if (checkBad) warn.push(check);
+  }
+  const bTxt = !F.bs || !F.bs.length ? 'без партии' : F.sel === 'auto' ? allocText(F.bs, rq || 0) : F.bs[F.sel].b;
+  const sum = it && raw ? [['Операция', isPk ? 'Выпуск · Фасовка' : 'Выпуск · Сублимация'], ['Получили', it.n + ' — ' + fmt(q) + ' ' + it.u], ['Партия продукта', F.batch],
+    ['Из сырья', raw.n + ' — ' + fmt(rq) + ' ' + raw.u], ['Партия сырья', bTxt], ...(F.brak ? [['Брак', fmt(brak) + ' кг']] : []), ...(check ? [['Проверка нормы', check]] : [])] : [];
+  return {m, miss, block, warn, sum, over, check, checkBad, action: 'prod',
+    data: it && raw ? {item: it.n, qty: F.qty, batch: F.batch, raw: raw.n, rawQty: F.rawQty, rawBatch: !F.bs || !F.bs.length || F.sel === 'auto' ? '' : F.bs[F.sel].b, brak: F.brak} : null};
+}
+
+/* ================= ИНВЕНТАРИЗАЦИЯ ================= */
+function invRows() { const it = F.item; if (!it) return []; if (isPack(it)) return [{b: '', q: stockQ(it.n), exp: ''}]; return F.bs || []; }
+function vInv() {
+  const it = F.item, V = vInv_valid();
+  let h = card(1, 'Товар', picker('item', null), true, V.m.item);
+  if (it) {
+    if (!F.bs && !isPack(it)) h += '<div class="hint">Загрузка партий…</div>';
+    else {
+      if (!invRows().length) h += '<div class="msg warn">По этому товару нет партий с остатком. Если товар есть на складе — оформите его через «Приход».</div>';
+      h += `<h2>2. Посчитайте и введите факт по каждой партии</h2><div class="grid2">`;
+      invRows().forEach((r, i) => {
+        const f = F.facts[i], d = f !== undefined && f !== '' ? r3(num(f) - r.q) : null;
+        h += `<div class="card"><div class="lbl">${r.b ? 'Партия ' + esc(r.b) : 'Без партии'}${r.exp ? ' <span class="opt-t">· годен до ' + esc(r.exp) + '</span>' : ''}</div>
+          <div class="hint" style="margin:0 0 10px">По учёту: <b>${fmt(r.q)} ${esc(it.u)}</b></div>
+          ${qbox('fact-' + i, 'Факт: ' + (r.b ? 'партия ' + r.b : it.n), it.u, unitInt(it.u))}
+          <div class="row" style="margin-top:10px"><button class="btn" data-a="same:${i}">= Совпадает с учётом</button></div>
+          ${d === null ? '' : d === 0 ? '<div class="msg ok">✓ Совпадает</div>' : d < 0 ? `<div class="msg bad">Недостача ${fmt(-d)} ${esc(it.u)}</div>` : `<div class="msg warn">Излишек ${fmt(d)} ${esc(it.u)}${r.src === 'Выпуск' ? ' — по партии выпуска излишек внесёт руководитель' : ''}</div>`}
+        </div>`;
+      });
+      h += '</div><div class="hint">Партии, по которым факт не введён, не изменятся. Если нашли партию, которой нет в списке, — сообщите руководителю.</div>';
+    }
+  }
+  return h + foot(V);
+}
+function vInv_valid() {
+  const it = F.item, m = {}, miss = [], block = [], warn = [], rows = invRows(), sum = [], data = [];
+  if (!it) { m.item = 1; miss.push('товар'); }
+  rows.forEach((r, i) => {
+    const f = F.facts[i]; if (f === undefined || f === '') return;
+    const x = num(f); if (!(x >= 0)) { block.push('Неверный факт'); return; }
+    const d = r3(x - r.q);
+    data.push({b: r.b, fact: f});
+    sum.push([r.b ? 'Партия ' + r.b : 'Без партии', 'учёт ' + fmt(r.q) + ' → факт ' + fmt(x) + ' ' + it.u + (d === 0 ? ' · совпадает' : d < 0 ? ' · недостача ' + fmt(-d) : ' · излишек ' + fmt(d))]);
+  });
+  if (it && !data.length) { miss.push('факт хотя бы по одной партии'); }
+  if (sum.some(s => s[1].includes('недостача'))) warn.push('Недостача будет записана в Расход с причиной «инвентаризация».');
+  return {m, miss, block, warn, sum: it ? [['Операция', 'Инвентаризация'], ['Товар', it.n], ...sum] : [], action: 'inv', data: it ? {item: it.n, rows: data} : null};
+}
+
+/* ----- низ формы: кнопка «Проверить и записать» ----- */
+function foot(V) {
+  const ok = !V.miss.length && !V.block.length;
+  return `<div class="foot">${V.miss.length ? `<div class="miss">Осталось заполнить: ${esc(V.miss.join(', '))}</div>` : ''}
+    ${V.block.map(b => `<div class="msg bad" style="margin:0 0 10px">⛔ ${esc(b)}</div>`).join('')}
+    <button class="btn ok wide" style="min-height:76px;font-size:24px" data-a="confirm" ${ok ? '' : 'disabled'}>Проверить и записать →</button></div>`;
+}
+function currentValid() { return ({in: vIn_valid, out: vOut_valid, prod: vProd_valid, inv: vInv_valid})[SCR](); }
+
+async function confirmWrite() {
+  const V = currentValid(); if (V.miss.length || V.block.length) return;
+  const yes = await dialog(`<h3>Проверьте перед записью</h3><table class="sum">${V.sum.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table>
+    ${V.warn.map(w => `<div class="msg warn">⚠ ${esc(w)}</div>`).join('')}`,
+    [{t: '← Исправить', v: false}, {t: '✓ Всё верно, записать', cls: 'ok', v: true}]);
+  if (!yes) return;
+  let j;
+  try { j = await call(V.action, V.data, {write: true, msg: 'Записываю…'}); }
+  catch (e) {
+    if (e.kind === 'auth') return;
+    haptic('error');
+    await dialog(`<div class="big-bad">❌ НЕ ЗАПИСАНО</div><div class="msg bad">${esc(e.message)}</div><div class="hint" style="margin-top:10px">Исправьте и попробуйте снова.</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]);
+    return;
+  }
+  haptic('success');
+  S.stock = j.stock || S.stock; S.bc = {};
+  S.lastWrite = {at: Date.now(), text: j.text, undo: !!j.undo}; ls('sklad_last', JSON.stringify(S.lastWrite));
+  const keepType = F.type;
+  const act = await dialog(`<div class="big-ok">✅ ЗАПИСАНО</div><div class="pre">${esc(j.text)}</div>${j.dup ? '<div class="msg info">Повторная отправка — дубль не создан.</div>' : ''}`,
+    [...(j.undo ? [{t: '↩ Отменить', cls: 'bad', v: 'undo'}] : []), {t: 'Ещё одна', v: 'again'}, {t: 'На главную', cls: 'pri', v: 'home'}]);
+  refreshQuiet();
+  if (act === 'undo') return doUndo();
+  if (act === 'again') go(SCR, {type: keepType}); else go('home');
+}
+async function doUndo() {
+  if (!(await ask('Отменить последнюю запись?\n' + (S.lastWrite ? S.lastWrite.text.split('\n')[0] : ''), 'Да, отменить', 'Нет'))) return;
+  try {
+    const j = await call('undo', {}, {write: true, msg: 'Отменяю…'});
+    S.stock = j.stock || S.stock; S.bc = {}; S.lastWrite = null; ls('sklad_last', null);
+    await dialog(`<div class="big-ok">↩ Отменено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]);
+    refreshQuiet(); go('home');
+  } catch (e) { if (e.kind !== 'auth') await dialog(`<div class="big-bad">Не получилось</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
+}
+
+/* ================= ОСТАТКИ ================= */
+function vStock() {
+  return `<input class="search" data-search="stockq" placeholder="🔍 Поиск товара…" autocomplete="off" value="${esc(F.q)}">
+    <div class="chips" style="margin:14px 0">${['Все'].concat(S.groups).map((g, i) => `<button class="chip ${F.g === g ? 'on' : ''}" data-a="sg:${i}">${esc(g)}</button>`).join('')}
+    <button class="chip ${F.all ? 'on' : ''}" data-a="sall">${F.all ? '✓ ' : ''}Показывать нулевые</button></div><div id="slist"></div>`;
+}
+function drawStockList() {
+  const box = document.getElementById('slist'); if (!box) return;
+  const w = F.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const rows = S.stock.map((s, i) => ({s, i})).filter(x => (F.g === 'Все' || x.s.g === F.g) && (F.all || (typeof x.s.q === 'number' && x.s.q !== 0)) && w.every(k => x.s.n.toLowerCase().includes(k)));
+  box.innerHTML = rows.length ? rows.map(({s, i}) => {
+    const st = s.st && s.st !== 'ок' ? `<span class="tag ${s.st.includes('⛔') ? 'bad' : s.st.includes('⚠') ? 'warn' : ''}">${esc(s.st)}</span>` : '';
+    const open = F.open[i];
+    return `<button class="opt" data-a="sopen:${i}" style="flex-wrap:wrap"><div style="flex:1"><div class="nm">${esc(s.n)}</div>
+      <div class="sub">${s.exp ? 'ближайший срок: ' + esc(s.exp) + ' ' : ''}${st}</div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div>
+      ${open ? `<div style="width:100%;margin-top:10px;font-size:18px">${open === 'load' ? 'Загрузка партий…' : open.length ? open.map((b, k) =>
+        `<div style="padding:6px 0;border-top:1px dashed #c9ced8">${k === 0 ? '<span class="tag fefo">★</span>' : ''}Партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(s.u)} · до ${esc(b.exp || '—')}${b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? ' <span class="tag bad">' + (b.d < 0 ? 'просрочена' : b.d + ' дн') + '</span>' : ''}</div>`).join('') : 'Партий нет (упаковка или без номера)'}</div>` : ''}
+    </button>`;
+  }).join('') : '<div class="empty">Ничего не найдено' + (F.all ? '' : '. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.') + '</div>';
+}
+
+/* ================= ВНИМАНИЕ ================= */
+function vAttn() {
+  let h = '<h2>Проверки</h2><div class="card">' + S.checks.map(c => `<div class="sel" style="padding:8px 0;border-bottom:1px solid #e3e6eb"><span>${esc(c.t)}</span>
+    <b style="font-size:24px;color:${c.n > 0 ? 'var(--bad)' : 'var(--ok)'}">${fmt(c.n)}</b></div>`).join('') + '</div>';
+  const soon = S.expiry.filter(x => x.d <= CFG.EXPIRY_WARN_DAYS), later = S.expiry.filter(x => x.d > CFG.EXPIRY_WARN_DAYS);
+  const ex = x => `<div class="opt" style="cursor:default"><div><div class="nm">${x.d < 0 ? '⛔' : '⚠'} ${esc(x.n)}</div><div class="sub">партия ${esc(x.b)} · до ${esc(x.exp)} · ${x.d < 0 ? 'просрочена' : 'осталось ' + x.d + ' дн'}</div></div><div class="q">${fmt(x.q)}</div></div>`;
+  h += `<h2>Сроки годности меньше ${CFG.EXPIRY_WARN_DAYS} дней</h2>` + (soon.length ? soon.map(ex).join('') : '<div class="msg ok">✅ Таких партий нет</div>');
+  if (later.length) h += `<h2>Сроки ${CFG.EXPIRY_WARN_DAYS}–60 дней</h2>` + later.map(ex).join('');
+  const pr = S.stock.filter(s => s.st && s.st !== 'ок' && s.st !== 'нет в наличии');
+  h += '<h2>Товары с проблемами</h2>' + (pr.length ? pr.map(s => `<div class="opt" style="cursor:default"><div><div class="nm">${esc(s.n)}</div><div class="sub"><span class="tag ${s.st.includes('⛔') ? 'bad' : 'warn'}">${esc(s.st)}</span></div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div></div>`).join('') : '<div class="msg ok">✅ Проблем нет</div>');
+  if (S.admin) h += `<h2>Руководитель</h2><div class="card"><button class="btn wide" data-a="last">Показать последние записи</button><div id="lastlist" class="list-sm" style="margin-top:12px">${F.last ? F.last.map((t, i) =>
+    `<div class="sel" style="padding:10px 0;border-bottom:1px solid #e3e6eb"><span style="flex:1">${i + 1}. ${esc(t)}</span><button class="btn bad" data-a="del:${i + 1}">Удалить</button></div>`).join('') || 'Записей нет' : ''}</div></div>`;
+  return h;
+}
+
+/* ================= ВХОД (вне Telegram) ================= */
+function vLogin() {
+  if (F.names) {
+    OPTS.names = F.names;
+    return `<div class="card"><div class="lbl">Кто вы?</div><div class="chips">${F.names.map((n, i) => `<button class="chip" data-a="lname:${i}">${esc(n)}</button>`).join('')}</div>
+      <div style="margin-top:16px"><button class="btn wide" data-a="lnew">Меня нет в списке — ввести имя</button></div></div>`;
+  }
+  const p = F.pin || '';
+  return `<div class="card" style="max-width:520px;margin:20px auto"><div class="lbl">Введите ПИН-код</div>
+    <div class="pinbox">${p ? '•'.repeat(p.length) : '&nbsp;'}</div>
+    <div class="keys">${['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(d => `<button class="key" data-a="pin:${d}">${d}</button>`).join('')}
+      <button class="key alt" data-a="pin:clr">Очистить</button><button class="key" data-a="pin:0">0</button><button class="key alt" data-a="pin:del">⌫</button></div>
+    <button class="btn ok wide" style="margin-top:14px;min-height:76px" data-a="pin:go" ${p ? '' : 'disabled'}>Войти</button>
+    <div class="hint">ПИН-код — тот же, что для подключения к боту. Спросите у руководителя.</div></div>`;
+}
+async function loginStep(name) {
+  try {
+    showLoader('Проверяю…');
+    const r = await fetch(CFG.API_URL, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({action: 'login', data: {pin: F.pin, name: name || ''}})});
+    const j = await r.json(); hideLayer();
+    if (!j.ok) { F.pin = ''; F.names = null; render(); await dialog(`<div class="big-bad">Ошибка</div><div class="msg bad">${esc(j.error)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); return; }
+    if (j.needName) { F.names = j.names; render(); return; }
+    S.token = j.token; ls('sklad_token', j.token); start();
+  } catch (e) { hideLayer(); if (await netDialog('Нет связи с интернетом.', false)) loginStep(name); }
+}
+function authFail(m) {
+  if (TG) { SCR = 'err'; F = {err: m}; render(); return; }
+  S.token = ''; ls('sklad_token', null); go('login'); dialog(`<div class="msg bad">${esc(m)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]);
+}
+function vErr() { return `<div class="card"><div class="big-bad">Нет доступа</div><div class="msg bad">${esc(F.err || '')}</div><button class="btn pri wide" style="margin-top:16px" data-a="retry">↻ Повторить</button></div>`; }
+
+/* ================= ДЕЙСТВИЯ ПО НАЖАТИЮ ================= */
+const ACT = {
+  back: () => back(),
+  go: s => go(s),
+  opt: (key, i) => { F[key] = OPTS[key][+i]; F.dirty = true; if (key === 'type' && SCR === 'out') F.reason = ''; render(); },
+  clr: key => { F[key] = ''; render(); },
+  kp: (key, int, el) => keypad(key, el.dataset.t, el.dataset.u, int === '1'),
+  pick: (key, i) => onPick(key, S.items[+i]),
+  recpick: (key, k) => onPick(key, OPTS['rec_' + key][+k]),
+  unpick: key => { F[key] = null; if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
+  bsel: v => { F.sel = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
+  setdate: d => { F.date = d; render(); },
+  editbatch: () => textInput('Номер партии', F.batch, v => { F.batch = v.replace(/;/g, ','); F.bManual = !!v; F.dirty = true; }, 'Как на этикетке или в накладной, например С-4'),
+  otherfrom: () => textInput('Откуда / поставщик', F.from, v => { F.from = v; }),
+  otherreason: () => textInput(REASON_REQ.includes(F.type) ? 'Причина' : 'Кому / причина', F.reason, v => { F.reason = v; F.dirty = true; }),
+  same: i => { const r = invRows()[+i]; F.facts[i] = String(r.q).replace('.', ','); F.dirty = true; render(); },
+  confirm: () => confirmWrite(),
+  undo: () => doUndo(),
+  sg: i => { F.g = ['Все'].concat(S.groups)[+i]; render(); },
+  sall: () => { F.all = !F.all; render(); },
+  sopen: async i => {
+    const s = S.stock[+i]; if (F.open[i]) { delete F.open[i]; drawStockList(); return; }
+    const it = itemBy(s.n); if (isPack(it)) { F.open[i] = []; drawStockList(); return; }
+    F.open[i] = await loadBatches(s.n); drawStockList();
+  },
+  last: async () => { try { const j = await call('last', {n: 15}, {msg: 'Загружаю…'}); F.last = j.data; render(); } catch (e) { if (e.kind !== 'auth') dialog(`<div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); } },
+  del: async n => {
+    if (!(await ask('Удалить запись №' + n + '?\n' + F.last[+n - 1], 'Удалить', 'Нет'))) return;
+    try { const j = await call('del', {n}, {write: true, msg: 'Удаляю…'}); S.stock = j.stock || S.stock; S.bc = {}; F.last = null; render();
+      await dialog(`<div class="big-ok">Удалено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]); refreshQuiet(); }
+    catch (e) { if (e.kind !== 'auth') dialog(`<div class="big-bad">Не удалено</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
+  },
+  pin: d => {
+    if (d === 'go') return loginStep('');
+    F.pin = F.pin || '';
+    if (d === 'del') F.pin = F.pin.slice(0, -1); else if (d === 'clr') F.pin = ''; else if (F.pin.length < 12) F.pin += d;
+    render();
+  },
+  lname: i => loginStep(OPTS.names[+i]),
+  lnew: () => textInput('Ваше имя', '', v => { if (v) loginStep(v); }),
+  logout: async () => { if (!(await ask('Выйти из приложения на этом устройстве?', 'Выйти', 'Нет'))) return; try { await api('logout', {}); } catch (e) {} S.token = ''; ls('sklad_token', null); S.who = ''; go('login'); },
+  retry: () => start()
+};
+document.addEventListener('click', e => {
+  const k = e.target.closest('[data-kp]'); if (k && KP) { kpPress(k.dataset.kp); return; }
+  const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
+  const [a, ...args] = el.dataset.a.split(':');
+  if (ACT[a]) ACT[a](...args, el);
+});
+document.addEventListener('input', e => {
+  const s = e.target.dataset.search;
+  if (s === 'stockq') { F.q = e.target.value; drawStockList(); return; }
+  if (s) { F['q_' + s] = e.target.value; drawPickRes(s); }
+});
+document.addEventListener('change', e => {
+  if (e.target.dataset.date) { const v = e.target.value; if (v) { F.date = v > today() ? today() : v; F.dirty = true; render(); } }
+});
+
+/* ================= ЗАПУСК ================= */
+function apply(d) {
+  Object.assign(S, {who: d.who, admin: d.admin, items: d.items, stock: d.stock, checks: d.checks, expiry: d.expiry,
+    lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups});
+}
+async function refreshQuiet() { try { apply((await api('init', {})).data); if (SCR === 'home' || SCR === 'attn') render(); } catch (e) {} }
+async function start() {
+  if (CFG.API_URL.indexOf('/exec') < 0) { SCR = 'err'; F = {err: 'В настройках не указан адрес API_URL.'}; render(); return; }
+  if (!TG && !S.token) { go('login'); return; }
+  try { apply((await call('init', {}, {msg: 'Загружаю склад…'})).data); go('home'); }
+  catch (e) { if (e.kind === 'auth') return; SCR = 'err'; F = {err: e.message}; render(); }
+}
+setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
+start();
+</script>
+</body>
+</html>
