@@ -121,7 +121,7 @@ const TG = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) ? Te
 const REASON_REQ = ['Брак', 'Потеря/усушка', 'Списание (срок)', 'Недостача (инвентаризация)'];
 const SELL = ['Отгрузка дистрибьютору', 'Продажа', 'Маркетплейс', 'Образец/промо'];
 const PACK = 'Упаковка', PACKED = 'ГП фасованная (шт)';
-const S = {items: [], stock: [], checks: [], expiry: [], lastBatch: {}, recent: {from: [], to: {}}, types: {in: [], out: []}, groups: [],
+const S = {items: [], stock: [], loads: [], checks: [], expiry: [], lastBatch: {}, recent: {from: [], to: {}}, types: {in: [], out: []}, groups: [],
            who: '', admin: false, bc: {}, token: ls('sklad_token') || '', lastWrite: JSON.parse(ls('sklad_last') || 'null')};
 let SCR = 'home', F = {}, OPTS = {}, PICKG = {};
 const app = document.getElementById('app'), layer = document.getElementById('layer');
@@ -246,7 +246,7 @@ function go(scr, keep) {
   SCR = scr; F = Object.assign({dirty: false}, keep || {}); OPTS = {}; PICKG = {};
   if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), qty: '', from: '', price: ''});
   if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
-  if (scr === 'prod') Object.assign(F, {item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: ''});
+  if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
   if (scr === 'stock') Object.assign(F, {q: '', g: 'Все', all: false, open: {}});
   render(); window.scrollTo(0, 0);
@@ -363,10 +363,12 @@ function vHome() {
   const undo = left > 0 ? `<div class="card"><div class="hint" style="margin:0 0 10px">Последняя запись: ${esc(lw.text.split('\n')[0])}</div>
     <button class="btn bad wide" data-a="undo">↩ Отменить последнюю запись (ещё ${left} мин)</button></div>` : '';
   const t = (scr, ic, name, sub) => `<button class="tile" data-a="go:${scr}"><span class="ic">${ic}</span>${name}<small>${sub}</small></button>`;
-  return banner + `<div class="tiles">
+  const L = S.loads || [];
+  const loadsCard = L.length ? `<button class="banner" style="background:#e2ecff;border:3px solid var(--pri);color:var(--pri)" data-a="unloadgo"><span>⏳ В сублиматоре: ${L.length} ${L.length === 1 ? 'загрузка' : 'загрузки'}<br><span style="font-weight:500;font-size:17px">${esc(L.slice(0, 3).map(x => x.item + ' · ' + x.batch + (x.days ? ' · ' + x.days + ' дн' : '')).join('; '))}</span></span><span>Выгрузить →</span></button>` : '';
+  return banner + loadsCard + `<div class="tiles">
     ${t('in', '📥', 'Приход', 'закупка, возврат')}
     ${t('out', '📤', 'Расход', 'отгрузка, брак, списание')}
-    ${t('prod', '🏭', 'Выпуск', 'сублимация, фасовка')}
+    ${t('prod', '🏭', 'Выпуск', 'загрузка, выгрузка, фасовка')}
     ${t('stock', '📋', 'Остатки', 'что есть на складе')}
     ${t('inv', '🧮', 'Инвентаризация', 'пересчёт по факту')}
   </div>` + '<div style="height:16px"></div>' + undo;
@@ -460,27 +462,42 @@ function vOut_valid() {
     data: it ? {type: F.type, item: it.n, qty: F.qty, reason: F.reason, batch: pack || F.sel === 'auto' || !b ? '' : b.b} : null};
 }
 
-/* ================= ВЫПУСК ================= */
-const PROD_G = ['Сублимат (кг)', 'ГП опт (кг)', PACKED], RAW_G = ['Сырьё', 'Сублимат (кг)', 'ГП опт (кг)'];
-function vProd() {
-  const it = F.item, raw = F.raw, V = vProd_valid();
+/* ================= ВЫПУСК: загрузка → выгрузка, фасовка ================= */
+const LOAD_G = ['Сублимат (кг)', 'ГП опт (кг)'], PACK_RAW_G = ['Сублимат (кг)', 'ГП опт (кг)'];
+const pc = v => (v * 100).toFixed(1).replace('.', ',') + '%';
+function yieldCheck(it, y) { // проверка выхода по коридору из справочника
+  const lo = it.ymin, hi = it.ymax, range = (lo != null ? pc(lo) : '?') + '–' + (hi != null ? pc(hi) : '?');
+  if (lo == null && hi == null) return {text: 'Выход: ' + pc(y) + ' · коридор не задан', bad: false};
+  if (lo != null && y < lo) return {text: 'Выход: ' + pc(y) + ' — ⚠ ниже коридора ' + range + '. Проверьте взвешивание (тару) и потери.', bad: true};
+  if (hi != null && y > hi) return {text: 'Выход: ' + pc(y) + ' — ⚠ выше коридора ' + range + '. Проверьте, досушен ли продукт.', bad: true};
+  return {text: 'Выход: ' + pc(y) + ' · в коридоре ' + range, bad: false};
+}
+function modeChips() {
+  const n = (S.loads || []).length;
+  const c = (m, t) => `<button class="chip ${F.mode === m ? 'on' : ''}" data-a="pmode:${m}" style="flex:1 1 200px">${t}</button>`;
+  return `<div class="chips" style="margin-bottom:16px">${c('load', '⏳ Загрузка в сублиматор')}${c('unload', '✅ Выгрузка' + (n ? ' (' + n + ')' : ''))}${c('pack', '📦 Фасовка')}</div>`;
+}
+function vProd() { return modeChips() + (F.mode === 'unload' ? vUnload() : vProdForm()); }
+function vProdForm() {
+  const it = F.item, raw = F.raw, V = vProd_valid(), load = F.mode === 'load';
   if (!F.bManual) F.batch = prodBatch();
   let n = 1, h = '<div class="grid2"><div>';
-  h += card(n++, 'Что получили (продукт)', picker('item', PROD_G), true, V.m.item);
-  h += card(n++, 'Из чего (сырьё)', picker('raw', RAW_G), true, V.m.raw);
+  h += card(n++, load ? 'Что получится (продукт)' : 'Что фасуем (пачки)', picker('item', load ? LOAD_G : [PACKED]), true, V.m.item);
+  h += card(n++, load ? 'Какое сырьё загружаем' : 'Из чего (сублимат)', picker('raw', load ? ['Сырьё'] : PACK_RAW_G), true, V.m.raw);
   if (raw && !isPack(raw)) h += card(n++, 'Партия сырья', batchOpts(F.bs, raw.u, F.sel), true);
   h += '</div><div>';
   if (raw) {
     const av = available(raw, F.bs, F.sel);
-    h += card(n++, 'Сколько сырья взяли', qbox('rawQty', 'Сырьё: ' + raw.n, raw.u, unitInt(raw.u)) +
+    h += card(n++, load ? 'Сколько сырья загрузили' : 'Сколько сублимата взяли', qbox('rawQty', 'Сырьё: ' + raw.n, raw.u, unitInt(raw.u)) +
       (av != null ? `<div class="hint">Доступно: <b>${fmt(av)} ${esc(raw.u)}</b></div>` : '') +
-      (V.over ? `<div class="msg bad">⛔ Столько сырья нет. Доступно ${fmt(av)} ${esc(raw.u)}.</div>` : ''), true, V.m.rawQty);
+      (V.over ? `<div class="msg bad">⛔ Столько нет. Доступно ${fmt(av)} ${esc(raw.u)}.</div>` : ''), true, V.m.rawQty);
   }
-  if (it) h += card(n++, 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
+  if (it && !load) h += card(n++, 'Сколько пачек получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
   if (it && raw) h += card(n++, 'Партия продукта', F.batch
     ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div><div class="hint">${F.bManual ? 'Введена вручную.' : 'Совпадает с партией сырья — так сохраняется прослеживаемость.'}</div>`
     : '<button class="btn pri wide" data-a="editbatch">Ввести номер партии</button>', true, V.m.batch);
-  if (it && raw) h += card(n++, 'Брак при производстве, кг', qbox('brak', 'Брак, кг', 'кг', false), false);
+  if (it && raw && !load) h += card(n++, 'Брак при фасовке, кг', qbox('brak', 'Брак, кг', 'кг', false), false);
+  if (load) h += '<div class="msg info">Вес после сушки вписывается потом: «Выпуск → ✅ Выгрузка», когда сублиматор закончит.</div>';
   h += '</div></div>';
   return h + foot(V);
 }
@@ -490,39 +507,65 @@ function prodBatch() {
   return b ? b.b : '';
 }
 function vProd_valid() {
-  const it = F.item, raw = F.raw, m = {}, miss = [], block = [], warn = [];
+  if (F.mode === 'unload') return vUnload_valid();
+  const load = F.mode === 'load', it = F.item, raw = F.raw, m = {}, miss = [], block = [], warn = [];
   if (!it) { m.item = 1; miss.push('продукт'); }
   if (!raw) { m.raw = 1; miss.push('сырьё'); }
   const rq = num(F.rawQty), q = num(F.qty);
   if (raw && !(rq > 0)) { m.rawQty = 1; miss.push('сколько сырья'); }
-  if (it && !(q > 0)) { m.qty = 1; miss.push('сколько получили'); }
+  if (it && !load && !(q > 0)) { m.qty = 1; miss.push('сколько пачек'); }
   if (it && raw && !F.batch) { m.batch = 1; miss.push('партия продукта'); }
   if (it && raw && it.n === raw.n) block.push('Продукт и сырьё — один и тот же товар.');
+  if (load && it && F.batch && (S.loads || []).some(x => x.item === it.n && x.batch === F.batch)) block.push('Партия ' + F.batch + ' этого продукта уже в сублиматоре. Выгрузите её или измените номер (например ' + F.batch + '/2).');
   const av = available(raw, F.bs, F.sel), over = raw && rq > 0 && av != null && rq > av + 1e-9;
   if (over) block.push('Сырья меньше, чем указано.');
   if (raw && !isPack(raw) && F.bs && !F.bs.length && !(stockQ(raw.n) > 0)) block.push('Этого сырья нет на складе.');
   if (typeof F.sel === 'number' && F.sel > 0 && F.bs && F.bs[0]) warn.push('Сырьё не по сроку (FEFO): есть партия ' + F.bs[0].b + ' до ' + F.bs[0].exp);
   const brak = num(F.brak);
   if (F.brak && !(brak >= 0)) block.push('Неверный брак.');
-  const isPk = it && it.g === PACKED;
   let check = '', checkBad = false;
-  if (it && rq > 0 && q > 0) {
-    if (isPk) { const g = rq * 1000 / q; checkBad = !!(it.w && g > it.w * 1.01); check = 'Вес 1 шт по факту: ' + g.toFixed(1) + ' г' + (it.w ? (checkBad ? ' — ⚠ больше нормы ' + it.w + ' г (перевес)' : ' · норма ' + it.w + ' г') : ' · норма не задана'); }
-    else {
-      const y = q / rq, lo = it.ymin, hi = it.ymax, pc = v => (v * 100).toFixed(1).replace('.', ',') + '%';
-      const range = (lo != null ? pc(lo) : '?') + '–' + (hi != null ? pc(hi) : '?');
-      if (lo == null && hi == null) check = 'Выход: ' + pc(y) + ' · коридор не задан';
-      else if (lo != null && y < lo) { checkBad = true; check = 'Выход: ' + pc(y) + ' — ⚠ ниже коридора ' + range + '. Проверьте взвешивание (тару) и потери.'; }
-      else if (hi != null && y > hi) { checkBad = true; check = 'Выход: ' + pc(y) + ' — ⚠ выше коридора ' + range + '. Проверьте, досушен ли продукт.'; }
-      else check = 'Выход: ' + pc(y) + ' · в коридоре ' + range;
-    }
+  if (!load && it && rq > 0 && q > 0) {
+    const g = rq * 1000 / q; checkBad = !!(it.w && g > it.w * 1.01);
+    check = 'Вес 1 шт по факту: ' + g.toFixed(1) + ' г' + (it.w ? (checkBad ? ' — ⚠ больше нормы ' + it.w + ' г (перевес)' : ' · норма ' + it.w + ' г') : ' · норма не задана');
     if (checkBad) warn.push(check);
   }
   const bTxt = !F.bs || !F.bs.length ? 'без партии' : F.sel === 'auto' ? allocText(F.bs, rq || 0) : F.bs[F.sel].b;
-  const sum = it && raw ? [['Операция', isPk ? 'Выпуск · Фасовка' : 'Выпуск · Сублимация'], ['Получили', it.n + ' — ' + fmt(q) + ' ' + it.u], ['Партия продукта', F.batch],
+  const rawBatch = !F.bs || !F.bs.length || F.sel === 'auto' ? '' : F.bs[F.sel].b;
+  if (load) {
+    const sum = it && raw ? [['Операция', '⏳ Загрузка в сублиматор'], ['Продукт', it.n], ['Партия продукта', F.batch],
+      ['Сырьё', raw.n + ' — ' + fmt(rq) + ' ' + raw.u], ['Партия сырья', bTxt], ['Вес готового', 'впишете при выгрузке']] : [];
+    return {m, miss, block, warn, sum, over, action: 'load', data: it && raw ? {item: it.n, batch: F.batch, raw: raw.n, rawQty: F.rawQty, rawBatch} : null};
+  }
+  const sum = it && raw ? [['Операция', 'Выпуск · Фасовка'], ['Получили', it.n + ' — ' + fmt(q) + ' ' + it.u], ['Партия продукта', F.batch],
     ['Из сырья', raw.n + ' — ' + fmt(rq) + ' ' + raw.u], ['Партия сырья', bTxt], ...(F.brak ? [['Брак', fmt(brak) + ' кг']] : []), ...(check ? [['Проверка нормы', check]] : [])] : [];
   return {m, miss, block, warn, sum, over, check, checkBad, action: 'prod',
-    data: it && raw ? {item: it.n, qty: F.qty, batch: F.batch, raw: raw.n, rawQty: F.rawQty, rawBatch: !F.bs || !F.bs.length || F.sel === 'auto' ? '' : F.bs[F.sel].b, brak: F.brak} : null};
+    data: it && raw ? {item: it.n, qty: F.qty, batch: F.batch, raw: raw.n, rawQty: F.rawQty, rawBatch, brak: F.brak} : null};
+}
+function vUnload() {
+  const L = S.loads || [], V = vUnload_valid();
+  if (!L.length) return '<div class="empty">Сейчас в сублиматоре ничего нет.<br>Загрузку оформляют во вкладке «⏳ Загрузка в сублиматор».</div>';
+  let h = card(1, 'Какую загрузку выгружаете', L.map((x, i) => `<button class="opt ${F.load === i ? 'on' : ''}" data-a="lsel:${i}"><div>
+    <div class="nm">${esc(x.item)} · партия ${esc(x.batch)}</div><div class="sub">сырьё: ${esc(x.raw)} — ${fmt(x.rq)} кг · загружено ${esc(x.date)}${x.days != null ? ' (' + (x.days === 0 ? 'сегодня' : x.days + ' дн назад') + ')' : ''}</div></div></button>`).join(''), true, V.m.load);
+  if (F.load != null && L[F.load]) {
+    const x = L[F.load], it = itemBy(x.item) || {u: 'кг'};
+    h += '<div class="grid2"><div>' + card(2, 'Вес после сублимации (взвесьте без тары)', qbox('qty', 'Вес готового: ' + x.item, it.u, unitInt(it.u)) +
+      (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty) + '</div><div>' +
+      card(3, 'Брак, кг', qbox('brak', 'Брак, кг', 'кг', false), false) + '</div></div>';
+  }
+  return h + foot(V);
+}
+function vUnload_valid() {
+  const m = {}, miss = [], block = [], warn = [], x = F.load != null ? (S.loads || [])[F.load] : null;
+  if (!x) { m.load = 1; miss.push('загрузка'); return {m, miss, block, warn, sum: [], action: 'unload', data: null}; }
+  const it = itemBy(x.item) || {u: 'кг'}, q = num(F.qty), brak = num(F.brak);
+  if (!(q > 0)) { m.qty = 1; miss.push('вес после сублимации'); }
+  if (q > x.rq) block.push('Вес после сушки больше веса сырья — проверьте цифры.');
+  if (F.brak && !(brak >= 0)) block.push('Неверный брак.');
+  let check = '', checkBad = false;
+  if (q > 0 && x.rq > 0) { const c = yieldCheck(it, q / x.rq); check = c.text; checkBad = c.bad; if (c.bad) warn.push(c.text); }
+  const sum = [['Операция', '✅ Выгрузка из сублиматора'], ['Продукт', x.item], ['Партия', x.batch], ['Сырьё', x.raw + ' — ' + fmt(x.rq) + ' кг (' + x.parts + ')'],
+    ['Загружено', x.date], ['Вес после сушки', fmt(q) + ' ' + it.u], ...(F.brak ? [['Брак', fmt(brak) + ' кг']] : []), ...(check ? [['Выход', check]] : [])];
+  return {m, miss, block, warn, sum, check, checkBad, action: 'unload', data: {item: x.item, batch: x.batch, qty: F.qty, brak: F.brak}};
 }
 
 /* ================= ИНВЕНТАРИЗАЦИЯ ================= */
@@ -588,20 +631,20 @@ async function confirmWrite() {
     return;
   }
   haptic('success');
-  S.stock = j.stock || S.stock; S.bc = {};
+  S.stock = j.stock || S.stock; S.bc = {}; if (j.loads) S.loads = j.loads;
   S.lastWrite = {at: Date.now(), text: j.text, undo: !!j.undo}; ls('sklad_last', JSON.stringify(S.lastWrite));
-  const keepType = F.type;
+  const keepType = F.type, keepMode = F.mode;
   const act = await dialog(`<div class="big-ok">✅ ЗАПИСАНО</div><div class="pre">${esc(j.text)}</div>${j.dup ? '<div class="msg info">Повторная отправка — дубль не создан.</div>' : ''}`,
     [...(j.undo ? [{t: '↩ Отменить', cls: 'bad', v: 'undo'}] : []), {t: 'Ещё одна', v: 'again'}, {t: 'На главную', cls: 'pri', v: 'home'}]);
   refreshQuiet();
   if (act === 'undo') return doUndo();
-  if (act === 'again') go(SCR, {type: keepType}); else go('home');
+  if (act === 'again') go(SCR, {type: keepType, mode: keepMode}); else go('home');
 }
 async function doUndo() {
   if (!(await ask('Отменить последнюю запись?\n' + (S.lastWrite ? S.lastWrite.text.split('\n')[0] : ''), 'Да, отменить', 'Нет'))) return;
   try {
     const j = await call('undo', {}, {write: true, msg: 'Отменяю…'});
-    S.stock = j.stock || S.stock; S.bc = {}; S.lastWrite = null; ls('sklad_last', null);
+    S.stock = j.stock || S.stock; S.bc = {}; if (j.loads) S.loads = j.loads; S.lastWrite = null; ls('sklad_last', null);
     await dialog(`<div class="big-ok">↩ Отменено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]);
     refreshQuiet(); go('home');
   } catch (e) { if (e.kind !== 'auth') await dialog(`<div class="big-bad">Не получилось</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
@@ -684,6 +727,9 @@ const ACT = {
   pick: (key, i) => onPick(key, S.items[+i]),
   recpick: (key, k) => onPick(key, OPTS['rec_' + key][+k]),
   unpick: key => { F[key] = null; if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
+  unloadgo: () => { go('prod', {mode: 'unload'}); },
+  pmode: m => { go('prod', {mode: m}); },
+  lsel: i => { F.load = +i; F.qty = ''; F.brak = ''; F.dirty = true; render(); },
   bsel: v => { F.sel = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
   setdate: d => { F.date = d; render(); },
   editbatch: () => textInput('Номер партии', F.batch, v => { F.batch = v.replace(/;/g, ','); F.bManual = !!v; F.dirty = true; }, 'Как на этикетке или в накладной, например С-4'),
@@ -702,7 +748,7 @@ const ACT = {
   last: async () => { try { const j = await call('last', {n: 15}, {msg: 'Загружаю…'}); F.last = j.data; render(); } catch (e) { if (e.kind !== 'auth') dialog(`<div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); } },
   del: async n => {
     if (!(await ask('Удалить запись №' + n + '?\n' + F.last[+n - 1], 'Удалить', 'Нет'))) return;
-    try { const j = await call('del', {n}, {write: true, msg: 'Удаляю…'}); S.stock = j.stock || S.stock; S.bc = {}; F.last = null; render();
+    try { const j = await call('del', {n}, {write: true, msg: 'Удаляю…'}); S.stock = j.stock || S.stock; S.bc = {}; if (j.loads) S.loads = j.loads; F.last = null; render();
       await dialog(`<div class="big-ok">Удалено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]); refreshQuiet(); }
     catch (e) { if (e.kind !== 'auth') dialog(`<div class="big-bad">Не удалено</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
   },
@@ -735,7 +781,7 @@ document.addEventListener('change', e => {
 /* ================= ЗАПУСК ================= */
 function apply(d) {
   Object.assign(S, {who: d.who, admin: d.admin, items: d.items, stock: d.stock, checks: d.checks, expiry: d.expiry,
-    lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups});
+    loads: d.loads || [], lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups});
 }
 async function refreshQuiet() { try { apply((await api('init', {})).data); if (SCR === 'home' || SCR === 'attn') render(); } catch (e) {} }
 async function start() {
