@@ -508,7 +508,14 @@ function vProd_valid() {
   let check = '', checkBad = false;
   if (it && rq > 0 && q > 0) {
     if (isPk) { const g = rq * 1000 / q; checkBad = !!(it.w && g > it.w * 1.01); check = 'Вес 1 шт по факту: ' + g.toFixed(1) + ' г' + (it.w ? (checkBad ? ' — ⚠ больше нормы ' + it.w + ' г (перевес)' : ' · норма ' + it.w + ' г') : ' · норма не задана'); }
-    else { const y = q / rq; checkBad = !!(it.y && y < it.y * 0.95); check = 'Выход: ' + (y * 100).toFixed(1) + '%' + (it.y ? (checkBad ? ' — ⚠ ниже нормы ' + Math.round(it.y * 100) + '%' : ' · норма ' + Math.round(it.y * 100) + '%') : ' · норма не задана'); }
+    else {
+      const y = q / rq, lo = it.ymin, hi = it.ymax, pc = v => (v * 100).toFixed(1).replace('.', ',') + '%';
+      const range = (lo != null ? pc(lo) : '?') + '–' + (hi != null ? pc(hi) : '?');
+      if (lo == null && hi == null) check = 'Выход: ' + pc(y) + ' · коридор не задан';
+      else if (lo != null && y < lo) { checkBad = true; check = 'Выход: ' + pc(y) + ' — ⚠ ниже коридора ' + range + '. Проверьте взвешивание (тару) и потери.'; }
+      else if (hi != null && y > hi) { checkBad = true; check = 'Выход: ' + pc(y) + ' — ⚠ выше коридора ' + range + '. Проверьте, досушен ли продукт.'; }
+      else check = 'Выход: ' + pc(y) + ' · в коридоре ' + range;
+    }
     if (checkBad) warn.push(check);
   }
   const bTxt = !F.bs || !F.bs.length ? 'без партии' : F.sel === 'auto' ? allocText(F.bs, rq || 0) : F.bs[F.sel].b;
