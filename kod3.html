@@ -1,0 +1,76 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Код Уведомления</title><style>
+body{font-family:-apple-system,system-ui,sans-serif;margin:0;padding:16px;background:#f5f5f7;color:#111}
+h1{font-size:22px}button{width:100%;font-size:24px;padding:22px;border:0;border-radius:14px;background:#0a7d32;color:#fff;font-weight:700}
+#st{font-size:20px;margin:14px 0;min-height:28px}textarea{width:100%;height:40vh;font:12px monospace;box-sizing:border-box}
+ol{font-size:17px;line-height:1.6}</style></head><body>
+<h1>Код для нового файла «Уведомления»</h1>
+<button id="b">📋 Скопировать весь код</button><div id="st"></div>
+<ol><li>Нажмите зелёную кнопку — появится «✅ Скопировано».</li>
+<li>Apps Script → слева «+» рядом с «Файлы» → <b>Скрипт</b> → назовите <b>Уведомления</b>.</li>
+<li>В новом файле нажмите в код → <b>Cmd+A</b> (или «Выбрать все») → <b>Cmd+V</b> / «Вставить». Заготовка <code>function myFunction() { }</code> должна исчезнуть полностью.</li>
+<li>Сохранить (💾). Ошибок быть не должно. Развертывать не нужно — уведомления работают по таймеру.</li></ol>
+<p>Строк в коде: 58. Последняя строка: <code>}</code></p>
+<textarea id="t" readonly>/**
+ * УВЕДОМЛЕНИЯ В TELEGRAM — записи из приложения и бота тоже рассылаются
+ * ----------------------------------------------------------------------
+ * Отдельный файл. Должен стоять ПОСЛЕДНИМ в списке файлов.
+ * Заменяет notifyNewRows из «Код.gs» (тот же триггер раз в 5 минут, ничего запускать не нужно).
+ *
+ * Было: записи «через бота» (бот и приложение) никому не приходили — считалось, что автор уже получил ответ.
+ * Стало: такие записи приходят ВСЕМ, КРОМЕ автора. Ручные правки таблицы и удаления — всем, как раньше.
+ */
+function notifyNewRows() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let snap = ss.getSheetByName(&#x27;_снимок&#x27;);
+  const first = !snap;
+  if (first) { snap = ss.insertSheet(&#x27;_снимок&#x27;); snap.hideSheet(); }
+  const inCols = {}; inCols[SH.IN] = 10; inCols[SH.PROD] = 11; inCols[SH.OUT] = 8;   // столбцы для подписи строки
+  const whoCol = {}; whoCol[SH.IN] = 8; whoCol[SH.PROD] = 9; whoCol[SH.OUT] = 6;      // «Кто внёс»
+  const cur = [];
+  LOG_CFG.forEach(c =&gt; {
+    const sh = sheet_(c.sheet), last = lastRow_(sh);
+    if (last &lt; 2) return;
+    sh.getRange(2, 1, last - 1, c.ncol).getValues().forEach(r =&gt; {
+      if (!r[2]) return;
+      const n = inCols[c.sheet];
+      const sig = c.sheet + &#x27;|&#x27; + r.slice(0, n).map(x =&gt; x instanceof Date ? x.getTime() : String(x)).join(&#x27;|&#x27;);
+      cur.push([sig, c.icon + &#x27; · &#x27; + fmtD_(r[0]) + &#x27; · &#x27; + c.fmt(r),
+        String(r[n - 1]).indexOf(&#x27;через бота&#x27;) &gt;= 0 ? &#x27;bot&#x27; : &#x27;-&#x27;, r[0] instanceof Date ? r[0].getTime() : 0,
+        String(r[whoCol[c.sheet]] || &#x27;&#x27;).trim()]);
+    });
+  });
+  if (!first) {
+    const old = snap.getLastRow() ? snap.getRange(1, 1, snap.getLastRow(), 4).getValues() : [];
+    const oc = {}, cc = {};
+    old.forEach(o =&gt; oc[o[0]] = (oc[o[0]] || 0) + 1);
+    cur.forEach(c =&gt; cc[c[0]] = (cc[c[0]] || 0) + 1);
+    const added = cur.filter(c =&gt; { if (oc[c[0]]) { oc[c[0]]--; return false; } return true; });
+    const removed = old.filter(o =&gt; { if (cc[o[0]]) { cc[o[0]]--; return false; } return true; });
+    if (added.length || removed.length) {
+      const users = users_();
+      Object.keys(users).forEach(ch =&gt; {
+        const me = String(users[ch] || &#x27;&#x27;).trim().toLowerCase();
+        const lines = [];
+        added.forEach(a =&gt; {
+          // свою свежую запись из бота/приложения автору не повторяем — он уже видел ответ
+          if (a[2] === &#x27;bot&#x27; &amp;&amp; a[4].toLowerCase() === me &amp;&amp; Date.now() - a[3] &lt; 60 * 60000) return;
+          lines.push(&#x27;➕ &#x27; + a[1]);
+        });
+        removed.forEach(r =&gt; lines.push(&#x27;➖ &#x27; + r[1]));
+        if (!lines.length) return;
+        const text = &#x27;✏ Изменения на складе:\n&#x27; + lines.slice(0, 40).join(&#x27;\n&#x27;) + (lines.length &gt; 40 ? &#x27;\n…ещё &#x27; + (lines.length - 40) : &#x27;&#x27;) +
+          (added.length &amp;&amp; removed.length ? &#x27;\n\n(исправленная строка видна как ➖ старая и ➕ новая)&#x27; : &#x27;&#x27;);
+        try { send_(ch, text); } catch (e) { console.error(e); }
+      });
+    }
+  }
+  snap.clearContents();
+  if (cur.length) snap.getRange(1, 1, cur.length, 4).setValues(cur.map(c =&gt; c.slice(0, 4)));
+}
+</textarea>
+<script>
+const b=document.getElementById('b'),t=document.getElementById('t'),st=document.getElementById('st');
+b.onclick=async()=>{try{await navigator.clipboard.writeText(t.value);st.textContent='✅ Скопировано '+t.value.length+' символов';}
+catch(e){t.focus();t.select();t.setSelectionRange(0,t.value.length);document.execCommand('copy');st.textContent='✅ Скопировано (если нет — выделите текст внизу вручную)';}};
+</script></body></html>
