@@ -127,6 +127,9 @@ const CFG = {
 const TG = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) ? Telegram.WebApp : null;
 const REASON_REQ = ['Брак', 'Потеря/усушка', 'Списание (срок)', 'Недостача (инвентаризация)'];
 const SELL = ['Отгрузка дистрибьютору', 'Продажа', 'Маркетплейс', 'Образец/промо'];
+// Кнопка «Фасовка» в Расходе: списание упаковки, потраченной на фасовку.
+// В таблицу пишется тип «Прочее» и причина «Фасовка: <продукт>» — сервер менять не нужно.
+const PACK_OUT = '📦 Фасовка (упаковка)', FP_G = ['ГП фасованная (шт)'];
 const PACK = 'Упаковка', PACKED = 'ГП фасованная (шт)';
 const S = {items: [], stock: [], loads: [], checks: [], expiry: [], lastBatch: {}, recent: {from: [], to: {}}, types: {in: [], out: []}, groups: [],
            who: '', admin: false, bc: {}, token: ls('sklad_token') || '', lastWrite: JSON.parse(ls('sklad_last') || 'null')};
@@ -207,7 +210,9 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Как на этикетке или в накладной, например С-4': "Yorliq yoki yuk xatidagidek, masalan С-4",
   // расход
   'Тип расхода': 'Chiqim turi', 'Партия': 'Partiya', 'Доступно:': 'Mavjud:', 'Причина': 'Sabab', 'Кому': 'Kimga', 'Кому / причина': 'Kimga / sabab',
-  'Другое…': 'Boshqa…', 'Ввести…': 'Kiritish…', 'Брак и потери записываются отдельной строкой — причина обязательна.': "Brak va yo'qotishlar alohida qatorda yoziladi — sabab majburiy.",
+  'Другое…': 'Boshqa…', 'Ввести…': 'Kiritish…', '📦 Фасовка (упаковка)': '📦 Qadoqlash (qadoq)', 'Что фасовали': 'Nimani qadoqladik',
+  'Списываем пакеты, этикетки, плёнку, коробки, потраченные на фасовку. Если для продукта заполнены «Нормы», упаковка уже списывается сама при «Выпуск → Фасовка» — тогда здесь записывайте только лишнюю или испорченную.': "Qadoqlashga sarflangan paket, yorliq, plyonka, qutilarni hisobdan chiqaramiz. Mahsulot uchun «Нормы» to'ldirilgan bo'lsa, qadoq «Ishlab chiqarish → Qadoqlash»da o'zi chiqariladi — bu yerda faqat ortiqcha yoki buzilganini yozing.",
+  'Сначала выберите упаковку.': 'Avval qadoqni tanlang.','Брак и потери записываются отдельной строкой — причина обязательна.': "Brak va yo'qotishlar alohida qatorda yoziladi — sabab majburiy.",
   // выпуск
   'Загрузка': 'Yuklash', 'Выгрузка': 'Tushirish', 'Что получится (продукт)': 'Nima chiqadi (mahsulot)', 'Что фасуем (пачки)': 'Nimani qadoqlaymiz (qadoqlar)',
   'Какое сырьё загружаем': 'Qaysi xomashyoni yuklaymiz', 'Из чего (сублимат)': 'Nimadan (sublimat)', 'Партия сырья': 'Xomashyo partiyasi',
@@ -657,11 +662,27 @@ function vIn_valid() {
 }
 
 /* ================= РАСХОД ================= */
+function vOutPack() {
+  const it = F.item, V = vOut_valid();
+  let n = 2, h = '';
+  h += card(n++, 'Упаковка', picker('item', ['Упаковка']) +
+    '<div class="hint">Списываем пакеты, этикетки, плёнку, коробки, потраченные на фасовку. Если для продукта заполнены «Нормы», упаковка уже списывается сама при «Выпуск → Фасовка» — тогда здесь записывайте только лишнюю или испорченную.</div>', true, V.m.item);
+  h += '</div><div>';
+  h += card(n++, 'Количество', it ? qbox('qty', 'Количество: ' + it.n, it.u, unitInt(it.u)) +
+    `<div class="hint">Доступно: <b>${fmt(stockQ(it.n))} ${esc(it.u)}</b></div>` +
+    (V.over ? `<div class="msg bad">⛔ Столько нет. Доступно только ${fmt(stockQ(it.n))} ${esc(it.u)}.</div>` : '')
+    : '<div class="hint">Сначала выберите упаковку.</div>', true, V.m.qty);
+  h += card(n++, 'Что фасовали', picker('fprod', FP_G), true, V.m.fprod);
+  h += '</div></div>';
+  return h + foot(V);
+}
 function vOut() {
-  const it = F.item, pack = isPack(it), V = vOut_valid();
-  const types = S.types.out.filter(t => t !== 'Недостача (инвентаризация)');
+  const it = F.item, pack = isPack(it);
+  const types = S.types.out.filter(t => t !== 'Недостача (инвентаризация)').concat([PACK_OUT]);
   let n = 1, h = '<div class="grid2"><div>';
   h += card(n++, 'Тип расхода', chips('type', types, F.type), true);
+  if (F.type === PACK_OUT) return h + vOutPack();
+  const V = vOut_valid();
   h += card(n++, 'Товар', picker('item', null), true, V.m.item);
   if (it && !pack) h += card(n++, 'Партия', batchOpts(F.bs, it.u, F.sel), true, V.m.batch);
   h += '</div><div>';
@@ -679,7 +700,21 @@ function vOut() {
   h += '</div></div>';
   return h + foot(V);
 }
+function vOutPack_valid() {
+  const it = F.item, fp = F.fprod, m = {}, miss = [], block = [], warn = [];
+  if (!it) { m.item = 1; miss.push('упаковка'); }
+  const q = num(F.qty);
+  if (!(q > 0)) { m.qty = 1; miss.push('количество'); }
+  if (!fp) { m.fprod = 1; miss.push('что фасовали'); }
+  const over = it && q > 0 && q > stockQ(it.n) + 1e-9;
+  if (over) block.push('Количество больше остатка.');
+  const sum = it ? [['Операция', 'Расход · Фасовка (упаковка)'], ['Упаковка', it.n], ['Количество', fmt(q) + ' ' + it.u],
+    ['Что фасовали', fp ? fp.n : '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]] : [];
+  return {m, miss, block, warn, sum, over, action: 'out',
+    data: it && fp ? {type: 'Прочее', item: it.n, qty: F.qty, reason: 'Фасовка: ' + fp.n, batch: ''} : null};
+}
 function vOut_valid() {
+  if (F.type === PACK_OUT) return vOutPack_valid();
   const it = F.item, pack = isPack(it), m = {}, miss = [], block = [], warn = [];
   if (!it) { m.item = 1; miss.push('товар'); }
   if (it && !pack && F.bs && !F.bs.length) block.push('Нет партий с остатком — расход невозможен.');
@@ -875,12 +910,12 @@ async function confirmWrite() {
   haptic('success');
   S.stock = j.stock || S.stock; S.bc = {}; if (j.loads) S.loads = j.loads;
   S.lastWrite = {at: Date.now(), text: j.text, undo: !!j.undo}; ls('sklad_last', JSON.stringify(S.lastWrite));
-  const keepType = F.type, keepMode = F.mode;
+  const keepType = F.type, keepMode = F.mode, keepFp = F.fprod;
   const act = await dialog(`<div class="big-ok">✅ ЗАПИСАНО</div><div class="pre">${esc(j.text)}</div>${j.dup ? '<div class="msg info">Повторная отправка — дубль не создан.</div>' : ''}`,
     [...(j.undo ? [{t: '↩ Отменить', cls: 'bad', v: 'undo'}] : []), {t: 'Ещё одна', v: 'again'}, {t: 'На главную', cls: 'pri', v: 'home'}]);
   refreshQuiet();
   if (act === 'undo') return doUndo();
-  if (act === 'again') go(SCR, {type: keepType, mode: keepMode}); else go('home');
+  if (act === 'again') go(SCR, {type: keepType, mode: keepMode, fprod: keepFp || null}); else go('home');
 }
 async function doUndo() {
   if (!(await ask('Отменить последнюю запись?\n' + (S.lastWrite ? S.lastWrite.text.split('\n')[0] : ''), 'Да, отменить', 'Нет'))) return;
@@ -964,12 +999,19 @@ function vErr() { return `<div class="card"><div class="big-bad">Нет дост
 const ACT = {
   back: () => back(),
   go: s => go(s),
-  opt: (key, i) => { F[key] = OPTS[key][+i]; F.dirty = true; if (key === 'type' && SCR === 'out') F.reason = ''; render(); },
+  opt: (key, i) => {
+    const was = F[key]; F[key] = OPTS[key][+i]; F.dirty = true;
+    if (key === 'type' && SCR === 'out') {
+      F.reason = '';
+      if ((was === PACK_OUT) !== (F[key] === PACK_OUT)) { F.item = null; F.bs = null; F.sel = 0; F.qty = ''; F.fprod = null; }
+    }
+    render();
+  },
   clr: key => { F[key] = ''; render(); },
   kp: (key, int, el) => keypad(key, el.dataset.t, el.dataset.u, int === '1'),
   pick: (key, i) => onPick(key, S.items[+i]),
   recpick: (key, k) => onPick(key, OPTS['rec_' + key][+k]),
-  unpick: key => { F[key] = null; if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
+  unpick: key => { F[key] = null; if (key === 'fprod') { render(); return; } if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
   unloadgo: () => { go('prod', {mode: 'unload'}); },
   pmode: m => { go('prod', {mode: m}); },
   lsel: i => { F.load = +i; F.qty = ''; F.brak = ''; F.dirty = true; render(); },
