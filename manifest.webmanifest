@@ -3,7 +3,7 @@
   "short_name": "Склад",
   "description": "Приход, расход, выпуск, остатки и инвентаризация склада SUB PROFI",
   "lang": "ru",
-  "id": "./",
+  "id": "/sklad-app/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
