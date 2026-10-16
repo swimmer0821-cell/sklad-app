@@ -6,6 +6,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b4fa8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Склад">
 <title>Склад SUB PROFI</title>
 <script>
 /* ======================= НАСТРОЙКИ ======================= */
@@ -1079,6 +1083,7 @@ async function start() {
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 document.documentElement.lang = LANG; if (LANG === 'uz') document.title = 'SUB PROFI ombori';
 start();
+if ('serviceWorker' in navigator && !TG) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {}));
 </script>
 </body>
 </html>
