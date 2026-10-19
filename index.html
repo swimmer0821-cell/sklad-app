@@ -353,6 +353,14 @@ const PHR_UZ = [
   [' кг', ' kg'], [' шт', ' dona'], [' сум', " so'm"]
 ].concat(Object.keys(TYPES_UZ).sort((a, b) => b.length - a.length).map(k => [k, TYPES_UZ[k]]));
 
+// Остатки по группам и разделам
+Object.assign(UZ, {'← Все группы': '← Barcha guruhlar', 'Поиск по всем группам…': "Barcha guruhlar bo'yicha qidirish…", 'Итого по группе': "Guruh bo'yicha jami",
+  'Нет позиций с остатком. Нажмите «Показывать нулевые».': "Qoldig'i bor pozitsiyalar yo'q. «Nollarni ko'rsatish»ni bosing.",
+  'Контейнеры': 'Konteynerlar', 'Пачки': 'Qadoqlar', '150 г': '150 g', 'Шоу-боксы': 'Shou-bokslar', 'Мороженое': 'Muzqaymoq', 'Йогурт': 'Yogurt',
+  'Фрукты': 'Mevalar', 'Сулугуни и курт': 'Suluguni va kurt', 'Сулугуни': 'Suluguni', 'Курт': 'Kurt', 'Молочное': 'Sut mahsulotlari', 'Добавки': "Qo'shimchalar",
+  'Тара и банки': 'Idish va bankalar', 'Этикетки': 'Etiketkalar', 'Пакеты и плёнка': 'Paketlar va plyonka', 'Стики': 'Stiklar', 'Гофра и коробки': 'Gofra va qutilar', 'Прочее': 'Boshqa'});
+UZR.push([/^с остатком: (\d+) из (\d+)$/, (m, a, b) => 'qoldiq bor: ' + a + ' / ' + b], [/^(\d+) поз\.$/, (m, n) => n + ' ta']);
+
 function trText(s) {
   if (UZ[s] != null) return UZ[s];
   for (const [re, f] of UZR) { const m = s.match(re); if (m) return f(...m); }
@@ -493,7 +501,7 @@ function go(scr, keep) {
   if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
   if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
-  if (scr === 'stock') Object.assign(F, {q: '', g: 'Все', all: false, open: {}});
+  if (scr === 'stock') Object.assign(F, {q: '', g: ls('sklad_sg') || 'Все', all: false, open: {}, sec: JSON.parse(ls('sklad_sec') || '{}')});
   render(); window.scrollTo(0, 0);
 }
 async function back() {
@@ -932,24 +940,85 @@ async function doUndo() {
 }
 
 /* ================= ОСТАТКИ ================= */
+/* Остатки: плитки групп → разделы (по формату и продукту) → позиции. Раскладка — по словам в названии. */
+const G_ICON = {'Сырьё': '🥛', 'Сублимат (кг)': '❄️', 'ГП опт (кг)': '📦', 'ГП фасованная (шт)': '🛍', 'Упаковка': '🏷'};
+const SEC_ORDER = ['Контейнеры', 'Пачки', '150 г', 'Шоу-боксы', 'Мороженое', 'Йогурт', 'Фрукты', 'Сулугуни и курт', 'Сулугуни', 'Курт',
+  'Молочное', 'Добавки', 'Тара и банки', 'Этикетки', 'Пакеты и плёнка', 'Стики', 'Гофра и коробки', 'Прочее', ''];
+function stockSec(s) {   // → [раздел, подраздел]
+  const n = ' ' + s.n.toLowerCase() + ' ', has = (...w) => w.some(x => n.includes(x));
+  const fruit = has('ананас', 'клубник', 'яблок', 'банан', 'вишн') && !has('мороженое');
+  if (s.g === 'ГП фасованная (шт)') {
+    const f = has('шоу бокс', 'шоу-бокс') ? 'Шоу-боксы' : has('контейнер') ? 'Контейнеры' : has(' 150 г') ? '150 г' : 'Пачки';
+    return [f, has('сулугуни') ? 'Сулугуни' : has('курт') ? 'Курт' : has('йогурт') ? 'Йогурт' : fruit ? 'Фрукты' : 'Мороженое'];
+  }
+  if (s.g === 'Сублимат (кг)') return [has('сулугуни', 'курт') ? 'Сулугуни и курт' : has('йогурт') ? 'Йогурт' : fruit ? 'Фрукты' : 'Мороженое', ''];
+  if (s.g === 'Сырьё') return [has('сулугуни', 'курт', 'мороженое', 'йогурт', 'молок') ? 'Молочное' : fruit ? 'Фрукты' : 'Добавки', ''];
+  if (s.g === 'Упаковка') return [has('этикет', 'пломба') ? 'Этикетки' : has('гофра', 'коробк') ? 'Гофра и коробки' : has('пакет', 'плёнк', 'пленк', 'зип') ? 'Пакеты и плёнка'
+    : has('стик') ? 'Стики' : has('тара', 'банк', 'мембран', 'крышк', 'ложк') ? 'Тара и банки' : 'Прочее', ''];
+  return ['', ''];
+}
+const secIdx = x => { const i = SEC_ORDER.indexOf(x); return i < 0 ? 99 : i; };
+const hasQ = s => typeof s.q === 'number' && s.q !== 0;
+const isWarn = s => s.st && (s.st.includes('⛔') || s.st.includes('⚠'));
 function vStock() {
-  return `<input class="search" data-search="stockq" placeholder="🔍 Поиск товара…" autocomplete="off" value="${esc(F.q)}">
-    <div class="chips" style="margin:14px 0">${['Все'].concat(S.groups).map((g, i) => `<button class="chip ${F.g === g ? 'on' : ''}" data-a="sg:${i}">${esc(g)}</button>`).join('')}
-    <button class="chip ${F.all ? 'on' : ''}" data-a="sall">${F.all ? '✓ ' : ''}Показывать нулевые</button></div><div id="slist"></div>`;
+  return `<input class="search" data-search="stockq" placeholder="🔍 Поиск по всем группам…" autocomplete="off" value="${esc(F.q)}">
+    <div id="sbar" style="margin:14px 0"></div><div id="slist"></div>`;
+}
+function stockRow(s, i) {
+  const st = s.st && s.st !== 'ок' ? `<span class="tag ${s.st.includes('⛔') ? 'bad' : s.st.includes('⚠') ? 'warn' : ''}">${esc(s.st)}</span>` : '';
+  const open = F.open[i];
+  return `<button class="opt" data-a="sopen:${i}" style="flex-wrap:wrap"><div style="flex:1"><div class="nm">${esc(s.n)}</div>
+    <div class="sub">${s.exp ? 'ближайший срок: ' + esc(s.exp) + ' ' : ''}${st}</div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div>
+    ${open ? `<div style="width:100%;margin-top:10px;font-size:18px">${open === 'load' ? 'Загрузка партий…' : open.length ? open.map((b, k) =>
+      `<div style="padding:6px 0;border-top:1px dashed #c9ced8">${k === 0 ? '<span class="tag fefo">★</span>' : ''}Партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(s.u)} · до ${esc(b.exp || '—')}${b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? ' <span class="tag bad">' + (b.d < 0 ? 'просрочена' : b.d + ' дн') + '</span>' : ''}</div>`).join('') + (open.length > 1 ? `<div style="padding:6px 0;border-top:2px solid #c9ced8;font-weight:800">Итого по партиям: ${fmt(r3(open.reduce((t, b) => t + (b.q || 0), 0)))} ${esc(s.u)}</div>` : '') : 'Партий нет (упаковка или без номера)'}</div>` : ''}
+  </button>`;
+}
+function sumText(list) {
+  const by = {}, order = [];
+  list.forEach(s => { if (typeof s.q !== 'number') return; if (!(s.u in by)) { by[s.u] = 0; order.push(s.u); } by[s.u] += s.q; });
+  return order.map(u => fmt(r3(by[u])) + ' ' + esc(u)).join(' · ');
 }
 function drawStockList() {
-  const box = document.getElementById('slist'); if (!box) return;
+  const box = document.getElementById('slist'), bar = document.getElementById('sbar'); if (!box || !bar) return;
   const w = F.q.toLowerCase().split(/\s+/).filter(Boolean);
-  const rows = S.stock.map((s, i) => ({s, i})).filter(x => (F.g === 'Все' || x.s.g === F.g) && (F.all || (typeof x.s.q === 'number' && x.s.q !== 0)) && w.every(k => x.s.n.toLowerCase().includes(k)));
-  box.innerHTML = rows.length ? rows.map(({s, i}) => {
-    const st = s.st && s.st !== 'ок' ? `<span class="tag ${s.st.includes('⛔') ? 'bad' : s.st.includes('⚠') ? 'warn' : ''}">${esc(s.st)}</span>` : '';
-    const open = F.open[i];
-    return `<button class="opt" data-a="sopen:${i}" style="flex-wrap:wrap"><div style="flex:1"><div class="nm">${esc(s.n)}</div>
-      <div class="sub">${s.exp ? 'ближайший срок: ' + esc(s.exp) + ' ' : ''}${st}</div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div>
-      ${open ? `<div style="width:100%;margin-top:10px;font-size:18px">${open === 'load' ? 'Загрузка партий…' : open.length ? open.map((b, k) =>
-        `<div style="padding:6px 0;border-top:1px dashed #c9ced8">${k === 0 ? '<span class="tag fefo">★</span>' : ''}Партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(s.u)} · до ${esc(b.exp || '—')}${b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? ' <span class="tag bad">' + (b.d < 0 ? 'просрочена' : b.d + ' дн') + '</span>' : ''}</div>`).join('') + (open.length > 1 ? `<div style="padding:6px 0;border-top:2px solid #c9ced8;font-weight:800">Итого по партиям: ${fmt(r3(open.reduce((t, b) => t + (b.q || 0), 0)))} ${esc(s.u)}</div>` : '') : 'Партий нет (упаковка или без номера)'}</div>` : ''}
-    </button>`;
-  }).join('') + totalRow(rows.map(({s}) => ({q: s.q, u: s.u}))) : '<div class="empty">Ничего не найдено' + (F.all ? '' : '. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.') + '</div>';
+  const zeroChip = `<button class="chip ${F.all ? 'on' : ''}" data-a="sall">${F.all ? '✓ ' : ''}Показывать нулевые</button>`;
+  // 1) поиск — по всем группам сразу
+  if (w.length) {
+    bar.innerHTML = `<div class="chips">${zeroChip}</div>`;
+    const rows = S.stock.map((s, i) => ({s, i})).filter(x => (F.all || hasQ(x.s)) && w.every(k => x.s.n.toLowerCase().includes(k)));
+    box.innerHTML = rows.length ? rows.map(({s, i}) => stockRow(s, i)).join('') + totalRow(rows.map(({s}) => ({q: s.q, u: s.u})))
+      : '<div class="empty">Ничего не найдено' + (F.all ? '' : '. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.') + '</div>';
+    return;
+  }
+  // 2) плитки групп
+  if (F.g === 'Все' || !S.groups.includes(F.g)) {
+    bar.innerHTML = '';
+    box.innerHTML = '<div class="tiles">' + S.groups.map((g, gi) => {
+      const all = S.stock.filter(s => s.g === g), pos = all.filter(hasQ), warn = all.filter(isWarn).length;
+      return `<button class="tile" data-a="sg:${gi + 1}"><span class="ic">${G_ICON[g] || '📁'}</span>${esc(g)}
+        <small>с остатком: ${pos.length} из ${all.length}</small>${warn ? `<small style="color:var(--bad);font-weight:800">⚠ ${warn}</small>` : ''}</button>`;
+    }).join('') + '</div>';
+    return;
+  }
+  // 3) группа → разделы
+  bar.innerHTML = `<div class="chips"><button class="chip" data-a="sg:0">← Все группы</button>${zeroChip}</div><h2 style="margin:16px 0 4px">${G_ICON[F.g] || ''} ${esc(F.g)}</h2>`;
+  const rows = S.stock.map((s, i) => ({s, i, sec: stockSec(s)})).filter(x => x.s.g === F.g && (F.all || hasQ(x.s)));
+  if (!rows.length) { box.innerHTML = '<div class="empty">Нет позиций с остатком. Нажмите «Показывать нулевые».</div>'; return; }
+  const secs = [...new Set(rows.map(x => x.sec[0]))].sort((a, b) => secIdx(a) - secIdx(b));
+  const one = secs.length === 1;
+  box.innerHTML = secs.map(sec => {
+    const list = rows.filter(x => x.sec[0] === sec), key = F.g + '|' + sec, open = one || F.sec[key];
+    const warn = list.filter(x => isWarn(x.s)).length;
+    const head = one ? '' : `<button class="opt" data-a="ssec:${esc(key)}" style="background:var(--pri-bg);border-color:var(--pri)"><div style="flex:1"><div class="nm">${open ? '▾' : '▸'} ${esc(sec || 'Прочее')}</div>
+      <div class="sub">${list.length} поз.${warn ? ` · <span class="tag bad">⚠ ${warn}</span>` : ''}</div></div><div class="q">${sumText(list.map(x => x.s))}</div></button>`;
+    if (!open) return head;
+    const subs = [...new Set(list.map(x => x.sec[1]))].sort((a, b) => secIdx(a) - secIdx(b));
+    const body = subs.map(sub => {
+      const sl = list.filter(x => x.sec[1] === sub);
+      return (sub && subs.length > 1 ? `<div class="hint" style="margin:10px 4px 6px;font-weight:800">${esc(sub)} · ${sl.length} поз.</div>` : '') + sl.map(x => stockRow(x.s, x.i)).join('');
+    }).join('');
+    return head + `<div style="${one ? '' : 'margin:0 0 16px 14px'}">${body}</div>`;
+  }).join('') + totalRow(rows.map(({s}) => ({q: s.q, u: s.u})), 'Итого по группе');
 }
 
 /* ================= ВНИМАНИЕ ================= */
@@ -1027,7 +1096,8 @@ const ACT = {
   same: i => { const r = invRows()[+i]; F.facts[i] = String(r.q).replace('.', ','); F.dirty = true; render(); },
   confirm: () => confirmWrite(),
   undo: () => doUndo(),
-  sg: i => { F.g = ['Все'].concat(S.groups)[+i]; render(); },
+  sg: i => { F.g = ['Все'].concat(S.groups)[+i]; ls('sklad_sg', F.g); render(); window.scrollTo(0, 0); },
+  ssec: k => { F.sec[k] = !F.sec[k]; if (!F.sec[k]) delete F.sec[k]; ls('sklad_sec', JSON.stringify(F.sec)); drawStockList(); },
   sall: () => { F.all = !F.all; render(); },
   sopen: async i => {
     const s = S.stock[+i]; if (F.open[i]) { delete F.open[i]; drawStockList(); return; }
