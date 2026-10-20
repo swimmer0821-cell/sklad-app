@@ -372,6 +372,12 @@ Object.assign(UZ, {'＋ Предложить новую позицию': '＋ Ya
   'Новые позиции на подтверждение': 'Tasdiqlash kutayotgan yangi pozitsiyalar', 'Заявок нет': "So'rovlar yo'q",
   'Добавить': "Qo'shish", 'Изменить и добавить': "O'zgartirib qo'shish", 'Отклонить': 'Rad etish', 'Отклонить заявку?': "So'rovni rad etasizmi?",
   'Напишите название.': 'Nomini yozing.', 'Выберите группу.': 'Guruhni tanlang.', 'Выберите единицу.': 'Birlikni tanlang.', 'Не сохранено': 'Saqlanmadi'});
+Object.assign(UZ, {'Что получится (пачки или ОПТ)': "Nima chiqadi (qadoq yoki ULGURJI)", 'Из чего': 'Nimadan', 'Сколько взяли': 'Qancha olindi',
+  'Партия': 'Partiya', 'Убрать позицию': 'Pozitsiyani olib tashlash', '＋ Добавить ещё позицию (смесь, микс)': "＋ Yana pozitsiya qo'shish (aralashma, miks)",
+  'Всего сырья': 'Jami xomashyo', 'Сколько получили': 'Qancha olindi', 'Сколько пачек получили': 'Nechta qadoq olindi'});
+UZR.push([/^Из чего — позиция (\d+)$/, (m, n) => 'Nimadan — ' + n + '-pozitsiya'], [/^Сырьё (\d+)$/, (m, n) => 'Xomashyo ' + n],
+  [/^Выпуск · Фасовка \(смесь из (\d+)\)$/, (m, n) => 'Ishlab chiqarish · Qadoqlash (' + n + ' tadan aralashma)'], [/^Не хватает «(.+)»: доступно (.+)\.$/, (m, a, b) => '«' + a + '» yetarli emas: ' + b + ' mavjud.']);
+PHR_UZ.unshift(['Всего сырья:', 'Jami xomashyo:']);
 UZR.push([/^Предложил\(а\): (.+)$/, (m, x) => 'Taklif qildi: ' + x], [/^Не нашли «(.+)»\?$/, (m, x) => '«' + x + '» topilmadimi?']);
 PHR_UZ.unshift(['📨 Отправлено руководителю на подтверждение:', '📨 Tasdiqlash uchun rahbarga yuborildi:'], ['Когда позицию добавят, она появится в списке.', "Pozitsiya qo'shilgach, ro'yxatda paydo bo'ladi."],
   ['✅ Добавлено в номенклатуру:', "✅ Nomenklaturaga qo'shildi:"], ['✅ Добавлено:', "✅ Qo'shildi:"], ['Отклонено:', 'Rad etildi:'], ['Такая позиция уже есть:', 'Bunday pozitsiya allaqachon bor:'],
@@ -652,6 +658,10 @@ async function onPick(key, it) {
     F.bs = null; F.sel = 0; F.facts = {};
     if (!isPack(it)) F.bs = await loadBatches(it.n); else F.bs = [];
   }
+  if (SCR === 'prod' && /^raw_\d+$/.test(key)) {   // доп. позиция смеси
+    const k = key.slice(4); F['bs_' + k] = null; F['sel_' + k] = 0;
+    F['bs_' + k] = isPack(it) ? [] : await loadBatches(it.n);
+  }
   render();
 }
 async function loadBatches(name) {
@@ -661,17 +671,18 @@ async function loadBatches(name) {
 }
 
 /* ----- выбор партии (FEFO) ----- */
-function batchOpts(bs, unit, sel, label) {
+function batchOpts(bs, unit, sel, label, act) {
+  act = act || 'bsel';
   if (!bs) return '<div class="hint">Загрузка партий…</div>';
   if (!bs.length) return '<div class="msg bad">Нет партий с остатком.</div>';
   const one = (b, i) => {
     const t = (i === 0 ? '<span class="tag fefo">★ Ближайший срок</span>' : '') +
       (b.d != null && b.d < 0 ? '<span class="tag bad">ПРОСРОЧЕНА</span>' : b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? `<span class="tag bad">срок ${b.d} дн</span>` : '');
-    return `<button class="opt ${sel === i ? 'on' : ''}" data-a="bsel:${i}"><div><div>${t}</div><div class="nm">Партия ${esc(b.b || 'без номера')}</div>
+    return `<button class="opt ${sel === i ? 'on' : ''}" data-a="${act}:${i}"><div><div>${t}</div><div class="nm">Партия ${esc(b.b || 'без номера')}</div>
       <div class="sub">годен до ${esc(b.exp || '—')}</div></div><div class="q">${fmt(b.q)} ${esc(unit)}</div></button>`;
   };
   let h = bs.map(one).join('');
-  if (bs.length > 1) h += `<button class="opt ${sel === 'auto' ? 'on' : ''}" data-a="bsel:auto"><div><div class="nm">Из нескольких партий</div>
+  if (bs.length > 1) h += `<button class="opt ${sel === 'auto' ? 'on' : ''}" data-a="${act}:auto"><div><div class="nm">Из нескольких партий</div>
     <div class="sub">${label || 'спишется по сроку: сначала ближайший'}</div></div><div class="q">${fmt(r3(bs.reduce((s, b) => s + b.q, 0)))} ${esc(unit)}</div></button>`;
   if (typeof sel === 'number' && sel > 0) h += `<div class="msg warn">⚠ Не по сроку (FEFO): есть партия ${esc(bs[0].b)} со сроком до ${esc(bs[0].exp)}. Берите её, если нет особой причины.</div>`;
   return h;
@@ -828,7 +839,7 @@ function vOut_valid() {
 }
 
 /* ================= ВЫПУСК: загрузка → выгрузка, фасовка ================= */
-const LOAD_G = ['Сублимат (кг)', 'ГП опт (кг)'], PACK_RAW_G = ['Сублимат (кг)', 'ГП опт (кг)'];
+const LOAD_G = ['Сублимат (кг)', 'ГП опт (кг)'], PACK_RAW_G = ['Сублимат (кг)', 'ГП опт (кг)'], PACK_PROD_G = ['ГП фасованная (шт)', 'ГП опт (кг)'];
 const pc = v => (v * 100).toFixed(1).replace('.', ',') + '%';
 function yieldCheck(it, y) { // проверка выхода по коридору из справочника
   const lo = it.ymin, hi = it.ymax, range = (lo != null ? pc(lo) : '?') + '–' + (hi != null ? pc(hi) : '?');
@@ -842,7 +853,7 @@ function modeChips() {
   const c = (m, ic, t) => `<button class="chip mode ${F.mode === m ? 'on' : ''}" data-a="pmode:${m}"><span class="mi">${ic}</span>${t}</button>`;
   return `<div class="modes">${c('load', '⏳', 'Загрузка')}${c('unload', '✅', 'Выгрузка' + (n ? ' (' + n + ')' : ''))}${c('pack', '📦', 'Фасовка')}</div>`;
 }
-function vProd() { return modeChips() + (F.mode === 'unload' ? vUnload() : vProdForm()); }
+function vProd() { return modeChips() + (F.mode === 'unload' ? vUnload() : F.mode === 'pack' ? vPackForm() : vProdForm()); }
 function vProdForm() {
   const it = F.item, raw = F.raw, V = vProd_valid(), load = F.mode === 'load';
   if (!F.bManual) F.batch = prodBatch();
@@ -866,6 +877,81 @@ function vProdForm() {
   h += '</div></div>';
   return h + foot(V);
 }
+/* ----- Фасовка / смесь: «Из чего» — одна или несколько позиций (миксы) ----- */
+const MAX_COMPS = 12;
+function comps() {   // позиция 0 — основная (F.raw, F.bs, F.sel, F.rawQty), дальше — добавленные
+  const out = [{k: 0, pk: 'raw', qk: 'rawQty', raw: F.raw, bs: F.bs, sel: F.sel, rq: F.rawQty}];
+  for (let k = 1; k <= (F.xn || 0); k++) out.push({k, pk: 'raw_' + k, qk: 'rq_' + k, raw: F['raw_' + k], bs: F['bs_' + k], sel: F['sel_' + k] == null ? 0 : F['sel_' + k], rq: F['rq_' + k]});
+  return out;
+}
+function vPackForm() {
+  const it = F.item, V = vProd_valid(), xs = comps(), many = xs.length > 1;
+  if (!F.bManual) F.batch = prodBatch();
+  let n = 1, h = '<div class="grid2"><div>';
+  h += card(n++, 'Что получится (пачки или ОПТ)', picker('item', PACK_PROD_G), true, V.m.item);
+  xs.forEach(c => {
+    let body = picker(c.pk, PACK_RAW_G);
+    if (c.raw) {
+      if (!isPack(c.raw)) body += '<div class="lbl" style="margin-top:14px">Партия</div>' + batchOpts(c.bs, c.raw.u, c.sel, null, c.k ? 'xsel:' + c.k : 'bsel');
+      const av = available(c.raw, c.bs, c.sel), rq = num(c.rq);
+      body += '<div class="lbl" style="margin-top:14px">Сколько взяли</div>' + qbox(c.qk, 'Сырьё: ' + c.raw.n, c.raw.u, unitInt(c.raw.u)) +
+        (av != null ? `<div class="hint">Доступно: <b>${fmt(av)} ${esc(c.raw.u)}</b></div>` : '') +
+        (rq > 0 && av != null && rq > av + 1e-9 ? `<div class="msg bad">⛔ Столько нет. Доступно ${fmt(av)} ${esc(c.raw.u)}.</div>` : '');
+    }
+    if (c.k) body += `<button class="btn bad" style="margin-top:14px" data-a="xdel:${c.k}">Убрать позицию</button>`;
+    h += card(n++, many ? 'Из чего — позиция ' + (c.k + 1) : 'Из чего', body, true, V.m['raw' + c.k]);
+  });
+  if (F.raw && xs.length < MAX_COMPS) h += `<button class="btn wide" style="margin-bottom:16px" data-a="xadd">＋ Добавить ещё позицию (смесь, микс)</button>`;
+  h += '</div><div>';
+  if (many && V.total > 0) h += totalRow([{q: r3(V.total), u: xs[0].raw ? xs[0].raw.u : 'кг'}], 'Всего сырья');
+  if (it) h += card(n++, it.g === PACKED ? 'Сколько пачек получили' : 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
+  if (it && F.raw) h += card(n++, 'Партия продукта', F.batch
+    ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div><div class="hint">${F.bManual ? 'Введена вручную.' : 'Совпадает с партией сырья — так сохраняется прослеживаемость.'}</div>`
+    : '<button class="btn pri wide" data-a="editbatch">Ввести номер партии</button>', true, V.m.batch);
+  if (it && F.raw) h += card(n++, 'Брак при фасовке, кг', qbox('brak', 'Брак, кг', 'кг', false), false);
+  h += '</div></div>';
+  return h + foot(V);
+}
+function vPack_valid() {
+  const it = F.item, xs = comps(), m = {}, miss = [], block = [], warn = [], seen = {};
+  if (!it) { m.item = 1; miss.push('продукт'); }
+  let total = 0, over = false;
+  xs.forEach((c, i) => {
+    if (!c.raw) { m['raw' + c.k] = 1; miss.push(i ? 'позиция ' + (c.k + 1) : 'сырьё'); return; }
+    const rq = num(c.rq);
+    if (!(rq > 0)) { m['raw' + c.k] = 1; miss.push(i ? 'сколько взяли (позиция ' + (c.k + 1) + ')' : 'сколько сырья'); } else total += rq;
+    if (it && c.raw.n === it.n) block.push('Продукт и сырьё — один и тот же товар.');
+    if (seen[c.raw.n]) block.push('«' + c.raw.n + '» указано дважды — сложите количество в одну позицию.'); seen[c.raw.n] = 1;
+    const av = available(c.raw, c.bs, c.sel);
+    if (rq > 0 && av != null && rq > av + 1e-9) { over = true; block.push('Не хватает «' + c.raw.n + '»: доступно ' + fmt(av) + ' ' + c.raw.u + '.'); }
+    if (!isPack(c.raw) && c.bs && !c.bs.length && !(stockQ(c.raw.n) > 0)) block.push('«' + c.raw.n + '» нет на складе.');
+    if (typeof c.sel === 'number' && c.sel > 0 && c.bs && c.bs[0]) warn.push((xs.length > 1 ? c.raw.n + ': н' : 'Сырьё н') + 'е по сроку (FEFO): есть партия ' + c.bs[0].b + ' до ' + c.bs[0].exp);
+  });
+  const q = num(F.qty);
+  if (it && !(q > 0)) { m.qty = 1; miss.push(it.g === PACKED ? 'сколько пачек' : 'сколько получили'); }
+  if (it && F.raw && !F.batch) { m.batch = 1; miss.push('партия продукта'); }
+  const brak = num(F.brak);
+  if (F.brak && !(brak >= 0)) block.push('Неверный брак.');
+  let check = '', checkBad = false;
+  if (it && total > 0 && q > 0) {
+    if (it.g === PACKED) {
+      const g = total * 1000 / q; checkBad = !!(it.w && g > it.w * 1.01);
+      check = 'Вес 1 шт по факту: ' + g.toFixed(1) + ' г' + (it.w ? (checkBad ? ' — ⚠ больше нормы ' + it.w + ' г (перевес)' : ' · норма ' + it.w + ' г') : ' · норма не задана');
+    } else {
+      const y = q / total; checkBad = y > 1.0001;
+      check = 'Выход: ' + pc(y) + (checkBad ? ' — ⚠ получилось больше, чем взяли сырья. Проверьте вес.' : '');
+    }
+    if (checkBad) warn.push(check);
+  }
+  const bTxt = c => !c.bs || !c.bs.length ? 'без партии' : c.sel === 'auto' ? allocText(c.bs, num(c.rq) || 0) : (c.bs[c.sel] ? c.bs[c.sel].b : '');
+  const ok = it && xs.every(c => c.raw);
+  const sum = ok ? [['Операция', 'Выпуск · Фасовка' + (xs.length > 1 ? ' (смесь из ' + xs.length + ')' : '')], ['Получили', it.n + ' — ' + fmt(q) + ' ' + it.u], ['Партия продукта', F.batch],
+    ...xs.map((c, i) => [xs.length > 1 ? 'Сырьё ' + (i + 1) : 'Из сырья', c.raw.n + ' — ' + fmt(num(c.rq)) + ' ' + c.raw.u + ' · ' + bTxt(c)]),
+    ...(xs.length > 1 ? [['Всего сырья', fmt(r3(total)) + ' ' + xs[0].raw.u]] : []), ...(F.brak ? [['Брак', fmt(brak) + ' кг']] : []), ...(check ? [['Проверка', check]] : [])] : [];
+  return {m, miss, block, warn, sum, over, check, checkBad, total, action: 'prod',
+    data: ok ? {item: it.n, qty: F.qty, batch: F.batch, brak: F.brak,
+      parts: xs.map(c => ({raw: c.raw.n, rawQty: c.rq, rawBatch: !c.bs || !c.bs.length || c.sel === 'auto' || !c.bs[c.sel] ? '' : c.bs[c.sel].b}))} : null};
+}
 function prodBatch() {
   if (!F.bs || !F.bs.length) return F.batch || '';
   const b = F.sel === 'auto' ? F.bs[0] : F.bs[F.sel];
@@ -873,6 +959,7 @@ function prodBatch() {
 }
 function vProd_valid() {
   if (F.mode === 'unload') return vUnload_valid();
+  if (F.mode === 'pack') return vPack_valid();
   const load = F.mode === 'load', it = F.item, raw = F.raw, m = {}, miss = [], block = [], warn = [];
   if (!it) { m.item = 1; miss.push('продукт'); }
   if (!raw) { m.raw = 1; miss.push('сырьё'); }
@@ -1175,11 +1262,19 @@ const ACT = {
   kp: (key, int, el) => keypad(key, el.dataset.t, el.dataset.u, int === '1'),
   pick: (key, i) => onPick(key, S.items[+i]),
   recpick: (key, k) => onPick(key, OPTS['rec_' + key][+k]),
-  unpick: key => { F[key] = null; if (key === 'fprod') { render(); return; } if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
+  unpick: key => { if (/^raw_\d+$/.test(key)) { const k = key.slice(4); F[key] = null; F['bs_' + k] = null; F['sel_' + k] = 0; F['rq_' + k] = ''; render(); return; }
+    F[key] = null; if (key === 'fprod') { render(); return; } if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
   unloadgo: () => { go('prod', {mode: 'unload'}); },
   pmode: m => { go('prod', {mode: m}); },
   lsel: i => { F.load = +i; F.qty = ''; F.brak = ''; F.dirty = true; render(); },
   bsel: v => { F.sel = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
+  xsel: (k, v) => { F['sel_' + k] = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
+  xadd: () => { F.xn = (F.xn || 0) + 1; F.dirty = true; render(); },
+  xdel: k => {   // убрать позицию k, остальные сдвинуть
+    k = +k; const n = F.xn || 0;
+    for (let i = k; i < n; i++) ['raw_', 'bs_', 'sel_', 'rq_', 'q_raw_'].forEach(p => { F[p + i] = F[p + (i + 1)]; });
+    ['raw_', 'bs_', 'sel_', 'rq_', 'q_raw_'].forEach(p => { delete F[p + n]; }); F.xn = n - 1; F.dirty = true; render();
+  },
   setdate: d => { F.date = d; render(); },
   editbatch: () => textInput('Номер партии', F.batch, v => { F.batch = v.replace(/;/g, ','); F.bManual = !!v; F.dirty = true; }, 'Как на этикетке или в накладной, например С-4'),
   otherfrom: () => textInput('Откуда / поставщик', F.from, v => { F.from = v; }),
