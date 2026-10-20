@@ -361,6 +361,22 @@ Object.assign(UZ, {'← Все группы': '← Barcha guruhlar', 'Поиск
   'Тара и банки': 'Idish va bankalar', 'Этикетки': 'Etiketkalar', 'Пакеты и плёнка': 'Paketlar va plyonka', 'Стики': 'Stiklar', 'Гофра и коробки': 'Gofra va qutilar', 'Прочее': 'Boshqa'});
 UZR.push([/^с остатком: (\d+) из (\d+)$/, (m, a, b) => 'qoldiq bor: ' + a + ' / ' + b], [/^(\d+) поз\.$/, (m, n) => n + ' ta']);
 
+// Новые позиции номенклатуры
+Object.assign(UZ, {'＋ Предложить новую позицию': '＋ Yangi pozitsiya taklif qilish', 'Нет нужной позиции?': "Kerakli pozitsiya yo'qmi?",
+  'Ничего не найдено.': 'Hech narsa topilmadi.', '＋ Новая позиция': '＋ Yangi pozitsiya', 'Название': 'Nomi', 'Группа': 'Guruh', 'Единица': 'Birlik',
+  'Полностью, как на упаковке. Например: Этикетка Пломбир 1 кг': "To'liq, qadoqdagidek. Masalan: Etiketka Plombir 1 kg",
+  'Срок годности, мес': 'Yaroqlilik muddati, oy', 'Мин. запас': 'Minimal zaxira', 'Сразу добавить в номенклатуру': "Darhol nomenklaturaga qo'shish",
+  'Позиция уйдёт руководителю на подтверждение.': 'Pozitsiya tasdiqlash uchun rahbarga yuboriladi.', 'Отмена': 'Bekor qilish',
+  'Отправить ✓': 'Yuborish ✓', 'Добавить ✓': "Qo'shish ✓", 'Отправляю…': 'Yuborilmoqda…', 'Обновляю список…': "Ro'yxat yangilanmoqda…",
+  'Отправлено': 'Yuborildi', 'Добавлено': "Qo'shildi", 'Хорошо': 'Yaxshi', 'Понятно': 'Tushunarli',
+  'Новые позиции на подтверждение': 'Tasdiqlash kutayotgan yangi pozitsiyalar', 'Заявок нет': "So'rovlar yo'q",
+  'Добавить': "Qo'shish", 'Изменить и добавить': "O'zgartirib qo'shish", 'Отклонить': 'Rad etish', 'Отклонить заявку?': "So'rovni rad etasizmi?",
+  'Напишите название.': 'Nomini yozing.', 'Выберите группу.': 'Guruhni tanlang.', 'Выберите единицу.': 'Birlikni tanlang.', 'Не сохранено': 'Saqlanmadi'});
+UZR.push([/^Предложил\(а\): (.+)$/, (m, x) => 'Taklif qildi: ' + x], [/^Не нашли «(.+)»\?$/, (m, x) => '«' + x + '» topilmadimi?']);
+PHR_UZ.unshift(['📨 Отправлено руководителю на подтверждение:', '📨 Tasdiqlash uchun rahbarga yuborildi:'], ['Когда позицию добавят, она появится в списке.', "Pozitsiya qo'shilgach, ro'yxatda paydo bo'ladi."],
+  ['✅ Добавлено в номенклатуру:', "✅ Nomenklaturaga qo'shildi:"], ['✅ Добавлено:', "✅ Qo'shildi:"], ['Отклонено:', 'Rad etildi:'], ['Такая позиция уже есть:', 'Bunday pozitsiya allaqachon bor:'],
+  ['Эта позиция уже ждёт подтверждения руководителя.', 'Bu pozitsiya allaqachon rahbar tasdig\'ini kutmoqda.']);
+
 function trText(s) {
   if (UZ[s] != null) return UZ[s];
   for (const [re, f] of UZR) { const m = s.match(re); if (m) return f(...m); }
@@ -560,7 +576,73 @@ function drawPickRes(key) {
   if (!q.length) { box.innerHTML = ''; return; }
   const res = S.items.map((it, i) => ({it, i})).filter(x => (!g || g.includes(x.it.g)) && q.every(w => x.it.n.toLowerCase().includes(w))).slice(0, 8);
   box.innerHTML = res.length ? res.map(x => `<button class="opt" data-a="pick:${key}:${x.i}"><div><div class="nm">${esc(x.it.n)}</div><div class="sub">${esc(x.it.g)}</div></div>
-    <div class="q">${fmt(stockQ(x.it.n))} ${esc(x.it.u)}</div></button>`).join('') : '<div class="msg warn">Ничего не найдено. Проверьте название или добавьте товар в Справочник таблицы.</div>';
+    <div class="q">${fmt(stockQ(x.it.n))} ${esc(x.it.u)}</div></button>`).join('') : '<div class="msg warn">Ничего не найдено.</div>';
+  // нет нужной позиции — можно предложить новую (руководитель подтверждает)
+  if (String(F['q_' + key] || '').trim().length >= 3)
+    box.innerHTML += `<div class="hint" style="margin:12px 0 6px">Нет нужной позиции?</div><button class="btn wide" data-a="newitem:${key}">＋ Предложить новую позицию</button>`;
+}
+
+/* ----- новая позиция номенклатуры: сотрудник предлагает, руководитель подтверждает ----- */
+let NI = null;
+const defUnit = g => /шт|Упаковка/.test(g) ? 'шт' : 'кг';
+const normN = s => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+function newItem(key, pre) {
+  const g = PICKG[key], groups = g && g.length ? g : S.groups;
+  NI = Object.assign({key, name: String(F['q_' + key] || '').replace(/\s+/g, ' ').trim(), groups, group: groups.length === 1 ? groups[0] : '', unit: '', srok: '', min: '', now: !!S.admin}, pre || {});
+  if (NI.group && !NI.unit) NI.unit = defUnit(NI.group);
+  drawNI();
+}
+function drawNI(err) {
+  const ch = (k, list, cur) => `<div class="chips">${list.map((x, i) => `<button class="chip ${x === cur ? 'on' : ''}" data-ni="${k}:${i}">${esc(x)}</button>`).join('')}</div>`;
+  const dec = !!NI.row;
+  layer.innerHTML = `<div class="ovl mid"><div class="sheet" style="max-height:92vh;overflow:auto"><h3>${dec ? 'Изменить и добавить' : '＋ Новая позиция'}</h3>
+    <div class="lbl">Название</div><input class="txt" id="ni_n" value="${esc(NI.name)}" autocomplete="off">
+    <div class="hint">Полностью, как на упаковке. Например: Этикетка Пломбир 1 кг</div>
+    <div class="lbl" style="margin-top:14px">Группа</div>${ch('g', NI.groups, NI.group)}
+    <div class="lbl" style="margin-top:14px">Единица</div>${ch('u', ['шт', 'кг'], NI.unit)}
+    <div class="lbl" style="margin-top:14px">Срок годности, мес <span class="opt-t">(можно не заполнять)</span></div><input class="txt" id="ni_s" inputmode="decimal" value="${esc(NI.srok)}" autocomplete="off">
+    <div class="lbl" style="margin-top:14px">Мин. запас <span class="opt-t">(можно не заполнять)</span></div><input class="txt" id="ni_m" inputmode="decimal" value="${esc(NI.min)}" autocomplete="off">
+    ${dec ? '' : S.admin ? `<label class="lbl" style="display:flex;gap:12px;align-items:center;margin-top:14px"><input type="checkbox" id="ni_now" ${NI.now ? 'checked' : ''} style="width:28px;height:28px">Сразу добавить в номенклатуру</label>`
+      : '<div class="hint" style="margin-top:14px">Позиция уйдёт руководителю на подтверждение.</div>'}
+    ${err ? `<div class="msg bad" style="margin-top:12px">${esc(err)}</div>` : ''}
+    <div class="row" style="margin-top:16px"><button class="btn" data-ni="x">Отмена</button><button class="btn ok" data-ni="go">${dec || (S.admin && NI.now) ? 'Добавить ✓' : 'Отправить ✓'}</button></div></div></div>`;
+}
+function niRead() {
+  const v = id => { const el = document.getElementById(id); return el ? el.value : ''; };
+  NI.name = v('ni_n').replace(/\s+/g, ' ').trim(); NI.srok = v('ni_s').trim(); NI.min = v('ni_m').trim();
+  const c = document.getElementById('ni_now'); if (c) NI.now = c.checked;
+}
+async function niPress(a) {
+  niRead();
+  const [k, i] = a.split(':');
+  if (k === 'g') { NI.group = NI.groups[+i]; if (!NI.uSet) NI.unit = defUnit(NI.group); return drawNI(); }
+  if (k === 'u') { NI.unit = ['шт', 'кг'][+i]; NI.uSet = true; return drawNI(); }
+  if (k === 'x') { NI = null; hideLayer(); return; }
+  if (k !== 'go') return;
+  if (NI.name.length < 3) return drawNI('Напишите название.');
+  if (!NI.group) return drawNI('Выберите группу.');
+  if (!NI.unit) return drawNI('Выберите единицу.');
+  const n = NI; NI = null;
+  const data = {name: n.name, group: n.group, unit: n.unit, srok: n.srok, min: n.min};
+  try {
+    if (n.row) {
+      const j = await call('item_decide', Object.assign({row: n.row, ok: true}, data), {write: true, msg: 'Записываю…'});
+      F.pend = j.items; await refreshQuiet(); render();
+      await dialog(`<div class="big-ok">Добавлено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]);
+      return;
+    }
+    const j = await call('item_request', Object.assign({now: !!n.now}, data), {write: true, msg: 'Отправляю…'});
+    if (j.added) {
+      apply((await call('init', {}, {msg: 'Обновляю список…'})).data);
+      const it = S.items.find(x => normN(x.n) === normN(n.name));
+      if (it && SCR !== 'attn') await onPick(n.key, it); else render();
+    }
+    await dialog(`<div class="big-ok">${j.added ? 'Добавлено' : 'Отправлено'}</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]);
+  } catch (e) { if (e.kind !== 'auth') { NI = n; drawNI(e.message); } }
+}
+async function loadPend() {
+  try { const j = await api('item_pending', {}); F.pend = j.data; } catch (e) { F.pend = []; F.pendErr = e.message; }
+  if (SCR === 'attn' && !layer.innerHTML) render();
 }
 async function onPick(key, it) {
   F[key] = it; F['q_' + key] = ''; F.dirty = true;
@@ -1032,6 +1114,15 @@ function vAttn() {
   if (later.length) h += `<h2>Сроки ${CFG.EXPIRY_WARN_DAYS}–60 дней</h2>` + later.map(ex).join('') + totalRow(later.map(uq));
   const pr = S.stock.filter(s => s.st && s.st !== 'ок' && s.st !== 'нет в наличии');
   h += '<h2>Товары с проблемами</h2>' + (pr.length ? pr.map(s => `<div class="opt" style="cursor:default"><div><div class="nm">${esc(s.n)}</div><div class="sub"><span class="tag ${s.st.includes('⛔') ? 'bad' : 'warn'}">${esc(s.st)}</span></div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div></div>`).join('') + totalRow(pr.map(s => ({q: s.q, u: s.u}))) : '<div class="msg ok">✅ Проблем нет</div>');
+  if (S.admin) {
+    if (F.pend === undefined) { F.pend = null; loadPend(); }
+    OPTS.pend = F.pend || [];
+    h += '<h2>Новые позиции на подтверждение</h2>' + (F.pend === null ? '<div class="hint">Загрузка…</div>'
+      : F.pend.length ? F.pend.map((p, i) => `<div class="card"><div class="nm" style="font-size:21px;font-weight:700">${esc(p.name)}</div>
+        <div class="sub">${esc(p.group)} · ${esc(p.unit)}${p.srok !== '' ? ' · ' + esc(p.srok) + ' мес' : ''} · ${esc(p.date)}</div><div class="sub">Предложил(а): ${esc(p.who)}</div>
+        <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn bad" data-a="pno:${i}">Отклонить</button><button class="btn" data-a="pedit:${i}">Изменить и добавить</button><button class="btn ok" data-a="pyes:${i}">Добавить</button></div></div>`).join('')
+      : '<div class="msg ok">' + (F.pendErr ? esc(F.pendErr) : 'Заявок нет') + '</div>');
+  }
   if (S.admin) h += `<h2>Руководитель</h2><div class="card"><button class="btn wide" data-a="last">Показать последние записи</button><div id="lastlist" class="list-sm" style="margin-top:12px">${F.last ? F.last.map((t, i) =>
     `<div class="sel" style="padding:10px 0;border-bottom:1px solid #e3e6eb"><span style="flex:1">${i + 1}. ${esc(t)}</span><button class="btn bad" data-a="del:${i + 1}">Удалить</button></div>`).join('') || 'Записей нет' : ''}</div></div>`;
   return h;
@@ -1120,11 +1211,26 @@ const ACT = {
   lname: i => loginStep(OPTS.names[+i]),
   lnew: () => textInput('Ваше имя', '', v => { if (v) loginStep(v); }),
   logout: async () => { if (!(await ask('Выйти из приложения на этом устройстве?', 'Выйти', 'Нет'))) return; try { await api('logout', {}); } catch (e) {} S.token = ''; ls('sklad_token', null); S.who = ''; go('login'); },
+  newitem: key => newItem(key),
+  pyes: async i => {
+    const p = OPTS.pend[+i]; if (!p) return;
+    try { const j = await call('item_decide', {row: p.row, ok: true}, {write: true, msg: 'Записываю…'}); F.pend = j.items; await refreshQuiet(); render();
+      await dialog(`<div class="big-ok">Добавлено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]); }
+    catch (e) { if (e.kind !== 'auth') { F.pend = undefined; render(); dialog(`<div class="big-bad">Не сохранено</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); } }
+  },
+  pedit: i => { const p = OPTS.pend[+i]; if (!p) return;
+    newItem('', {row: p.row, name: p.name, groups: S.groups, group: p.group, unit: p.unit, uSet: true, srok: String(p.srok), min: String(p.min)}); },
+  pno: async i => {
+    const p = OPTS.pend[+i]; if (!p || !(await ask('Отклонить заявку?\n' + p.name, 'Отклонить', 'Нет'))) return;
+    try { const j = await call('item_decide', {row: p.row, ok: false}, {write: true, msg: 'Записываю…'}); F.pend = j.items; render(); }
+    catch (e) { if (e.kind !== 'auth') { F.pend = undefined; render(); dialog(`<div class="big-bad">Не сохранено</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); } }
+  },
   retry: () => start(),
   lang: () => setLang(LANG === 'uz' ? 'ru' : 'uz')
 };
 document.addEventListener('click', e => {
   const k = e.target.closest('[data-kp]'); if (k && KP) { kpPress(k.dataset.kp); return; }
+  const ni = e.target.closest('[data-ni]'); if (ni && NI) { niPress(ni.dataset.ni); return; }
   const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
   const [a, ...args] = el.dataset.a.split(':');
   if (ACT[a]) ACT[a](...args, el);
