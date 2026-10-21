@@ -272,7 +272,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Фасовка оформляется сразу, без загрузки в сублиматор.': 'Qadoqlash sublimatorga yuklashsiz darhol rasmiylashtiriladi.'
 });
 const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya raqami', 'дата производства': 'ishlab chiqarilgan sana', 'количество': 'miqdor', 'причина': 'sabab',
-  'продукт': 'mahsulot', 'сырьё': 'xomashyo', 'сколько сырья': 'xomashyo miqdori', 'сколько пачек': 'qadoqlar soni', 'партия продукта': 'mahsulot partiyasi',
+  'продукт': 'mahsulot', 'сырьё': 'xomashyo', 'сколько сырья': 'xomashyo miqdori', 'сколько пачек': 'qadoqlar soni', 'сколько штук': 'necha dona', 'партия продукта': 'mahsulot partiyasi',
   'загрузка': 'yuklama', 'вес после сублимации': "sublimatsiyadan keyingi og'irlik", 'факт хотя бы по одной партии': "kamida bitta partiya bo'yicha fakt"};
 const u = x => UNITS_UZ[x] || x, ty = x => TYPES_UZ[x] || x;
 const UZR = [
@@ -356,7 +356,7 @@ const PHR_UZ = [
 // Остатки по группам и разделам
 Object.assign(UZ, {'← Все группы': '← Barcha guruhlar', 'Поиск по всем группам…': "Barcha guruhlar bo'yicha qidirish…", 'Итого по группе': "Guruh bo'yicha jami",
   'Нет позиций с остатком. Нажмите «Показывать нулевые».': "Qoldig'i bor pozitsiyalar yo'q. «Nollarni ko'rsatish»ni bosing.",
-  'Контейнеры': 'Konteynerlar', 'Пачки': 'Qadoqlar', '150 г': '150 g', 'Шоу-боксы': 'Shou-bokslar', 'Мороженое': 'Muzqaymoq', 'Йогурт': 'Yogurt',
+  'Контейнеры': 'Konteynerlar', 'Банки': 'Bankalar', '150 г': '150 g', 'Шоу-боксы': 'Shou-bokslar', 'Мороженое': 'Muzqaymoq', 'Йогурт': 'Yogurt',
   'Фрукты': 'Mevalar', 'Сулугуни и курт': 'Suluguni va kurt', 'Сулугуни': 'Suluguni', 'Курт': 'Kurt', 'Молочное': 'Sut mahsulotlari', 'Добавки': "Qo'shimchalar",
   'Тара и банки': 'Idish va bankalar', 'Этикетки': 'Etiketkalar', 'Пакеты и плёнка': 'Paketlar va plyonka', 'Стики': 'Stiklar', 'Гофра и коробки': 'Gofra va qutilar', 'Прочее': 'Boshqa'});
 UZR.push([/^с остатком: (\d+) из (\d+)$/, (m, a, b) => 'qoldiq bor: ' + a + ' / ' + b], [/^(\d+) поз\.$/, (m, n) => n + ' ta']);
@@ -374,7 +374,9 @@ Object.assign(UZ, {'＋ Предложить новую позицию': '＋ Ya
   'Напишите название.': 'Nomini yozing.', 'Выберите группу.': 'Guruhni tanlang.', 'Выберите единицу.': 'Birlikni tanlang.', 'Не сохранено': 'Saqlanmadi'});
 Object.assign(UZ, {'Что получится (пачки или ОПТ)': "Nima chiqadi (qadoq yoki ULGURJI)", 'Из чего': 'Nimadan', 'Сколько взяли': 'Qancha olindi',
   'Партия': 'Partiya', 'Убрать позицию': 'Pozitsiyani olib tashlash', '＋ Добавить ещё позицию (смесь, микс)': "＋ Yana pozitsiya qo'shish (aralashma, miks)",
-  'Всего сырья': 'Jami xomashyo', 'Сколько получили': 'Qancha olindi', 'Сколько пачек получили': 'Nechta qadoq olindi'});
+  'Всего сырья': 'Jami xomashyo', 'Сколько получили': 'Qancha olindi', 'Сколько пачек получили': 'Nechta qadoq olindi',
+  'Сколько штук получили': 'Necha dona olindi', 'Что получится (штуки или ОПТ)': 'Nima chiqadi (dona yoki ULGURJI)', 'Сырья всего, кг (вес 1 шт × количество)': "Jami xomashyo, kg (1 dona og'irligi × soni)",
+  '«Из чего» заполнено вручную.': "«Nimadan» qo'lda to'ldirilgan.", '↺ Заполнить по рецепту': "↺ Retsept bo'yicha to'ldirish"});
 UZR.push([/^Из чего — позиция (\d+)$/, (m, n) => 'Nimadan — ' + n + '-pozitsiya'], [/^Сырьё (\d+)$/, (m, n) => 'Xomashyo ' + n],
   [/^Выпуск · Фасовка \(смесь из (\d+)\)$/, (m, n) => 'Ishlab chiqarish · Qadoqlash (' + n + ' tadan aralashma)'], [/^Не хватает «(.+)»: доступно (.+)\.$/, (m, a, b) => '«' + a + '» yetarli emas: ' + b + ' mavjud.']);
 PHR_UZ.unshift(['Всего сырья:', 'Jami xomashyo:'], ['📦 Упаковка (списана автоматически):', '📦 Qadoq (avtomatik hisobdan chiqarildi):'], ['⚠ Упаковки не хватало:', "⚠ Qadoq yetmadi:"]);
@@ -931,6 +933,77 @@ function packData(it) {
   return r.opt ? {bags: F.bags, boxes: F.boxes} : r.boxPer ? {boxes: F.boxes} : {};
 }
 
+/* ----- Рецепты контейнеров: откуда брать сырьё (21.10.2026) -----
+   20/30 г — только кубики: микс 4 вкуса — сначала «Мороженое микс (4вкуса) кубики», не хватает — поровну из кубиков
+            Пломбир, Шоколад, Клубника, Банан; остальные — свой кубик.
+   100 г   — только ОПТ: микс 4 вкуса — сначала ОПТ-микс, не хватает — поровну из ОПТ Пломбир, Шоколадное, Клубника, Банан;
+            фруктовый микс — ОПТ Фруктовый микс, не хватает — поровну из ОПТ Апельсин, Киви, Вишня, Клубника, Малина; остальные — свой ОПТ.
+   Сырья всего = вес 1 шт × количество (можно исправить). */
+function recipeFor(it) {
+  if (!it || it.g !== PACKED) return null;
+  const n = it.n.toLowerCase(); if (!n.includes('контейнер')) return null;
+  const g = (n.match(/(\d+)\s*г(?![а-яё])/) || [])[1];
+  const flavor = n.replace(/^мороженое\s+/, '').replace(/\s*\d+\s*г(?![а-яё]).*$/, '').trim();
+  const by = s => S.items.find(x => x.n.toLowerCase() === s.toLowerCase()) || null;
+  if (g === '20' || g === '30') {
+    if (flavor === 'микс (4вкуса)') return {main: by('Мороженое микс (4вкуса) кубики'), parts: ['Пломбир кубик', 'Шоколад кубик', 'Клубника кубик', 'Банан кубик'].map(by), names: ['Пломбир кубик', 'Шоколад кубик', 'Клубника кубик', 'Банан кубик']};
+    const cube = S.items.find(x => x.g === 'Сублимат (кг)' && /кубик/i.test(x.n) && x.n.toLowerCase().includes(flavor));
+    return cube ? {main: cube, parts: [], names: []} : null;
+  }
+  if (g === '100') {
+    const opt = f => 'Мороженое ОПТ ' + f;
+    if (flavor === 'микс (4вкуса)') { const nm = ['Пломбир', 'Шоколадное', 'Клубника', 'Банан'].map(opt); return {main: by('Мороженое ОПТ Микс (4 вкуса)'), parts: nm.map(by), names: nm}; }
+    if (flavor === 'фруктовый микс') { const nm = ['Апельсин', 'Киви', 'Вишня', 'Клубника', 'Малина'].map(opt); return {main: by('Мороженое ОПТ Фруктовый микс'), parts: nm.map(by), names: nm}; }
+    const o = by(opt(flavor));
+    return o ? {main: o, parts: [], names: []} : null;
+  }
+  return null;
+}
+function recipeLines(it, kg) {   // [{it, q}] — сначала основная позиция, недостаток поровну из составляющих
+  const r = recipeFor(it); if (!r || !r.main || !(kg > 0)) return null;
+  const lines = [], missing = r.names.filter((x, i) => !r.parts[i]);
+  if (!r.parts.length) return {lines: [{it: r.main, q: r3(kg)}], missing, r};
+  const fromMain = Math.min(kg, Math.max(0, stockQ(r.main.n) || 0));
+  if (fromMain > 1e-9) lines.push({it: r.main, q: r3(fromMain)});
+  let need = r3(kg - fromMain);
+  const parts = r.parts.filter(Boolean);
+  if (need > 1e-9 && parts.length) {
+    const each = Math.floor(need / parts.length * 1000) / 1000;
+    parts.forEach((p, i) => lines.push({it: p, q: i === parts.length - 1 ? r3(need - each * (parts.length - 1)) : each}));
+  }
+  return {lines, missing, r};
+}
+let RLOAD = {};
+function applyRecipe() {   // заполняет «Из чего» по рецепту, пока сотрудник не поправил вручную
+  const it = F.item, q = num(F.qty);
+  if (it && F.recipeItem !== it.n) { F.recipeItem = it.n; F.mixManual = false; F.rawTotal = ''; F.rawTotal_auto = undefined; }
+  if (!it || F.mixManual || !recipeFor(it) || !it.w || !(q > 0)) { F.recipe = null; return; }
+  autoVal('rawTotal', String(r3(Math.round(q) * it.w / 1000)).replace('.', ','));
+  const plan = recipeLines(it, num(F.rawTotal));
+  if (!plan || !plan.lines.length) { F.recipe = null; return; }
+  F.recipe = plan;
+  const set = (k, x) => {
+    const pk = k ? 'raw_' + k : 'raw', qk = k ? 'rq_' + k : 'rawQty', bk = k ? 'bs_' + k : 'bs', sk = k ? 'sel_' + k : 'sel';
+    if (!F[pk] || F[pk].n !== x.it.n) { F[pk] = x.it; F[bk] = null; }
+    if (!F[bk]) F[bk] = isPack(x.it) ? [] : (S.bc[x.it.n] || null);
+    F[qk] = String(x.q).replace('.', ',');
+    const bs = F[bk]; F[sk] = bs && bs.length > 1 ? 'auto' : 0;
+    if (!bs && !RLOAD[x.it.n]) { RLOAD[x.it.n] = 1; const nm = x.it.n; loadBatches(nm).then(() => { if (!S.bc[nm]) S.bc[nm] = []; delete RLOAD[nm]; if (SCR === 'prod') render(); }); }
+  };
+  plan.lines.forEach((x, i) => set(i, x));
+  for (let k = plan.lines.length; k <= (F.xn || 0); k++) ['raw_', 'bs_', 'sel_', 'rq_', 'q_raw_'].forEach(p => { delete F[p + k]; });
+  F.xn = plan.lines.length - 1;
+}
+function recipeCard(it, n) {
+  const r = recipeFor(it); if (!r || !it.w) return '';
+  if (F.mixManual) return `<div class="card"><div class="hint">«Из чего» заполнено вручную.</div><button class="btn wide" style="margin-top:10px" data-a="mixauto">↺ Заполнить по рецепту</button></div>`;
+  if (!(num(F.qty) > 0)) return `<div class="msg info">Введите, сколько штук получили, — сырьё подставится само по рецепту (${it.w} г × шт).</div>`;
+  const pl = F.recipe;
+  return card(n, 'Сырья всего, кг (вес 1 шт × количество)', qbox('rawTotal', 'Сырья всего', 'кг', false) +
+    `<div class="hint">По рецепту: ${esc(r.main ? r.main.n : '—')}${r.parts.length ? ', если не хватает — поровну: ' + esc(r.names.join(', ')) : ''}. Ниже можно поправить вручную.</div>` +
+    (pl && pl.missing.length ? `<div class="msg warn">Нет в справочнике: ${esc(pl.missing.join(', '))}</div>` : ''), true);
+}
+
 /* ----- Фасовка / смесь: «Из чего» — одна или несколько позиций (миксы) ----- */
 const MAX_COMPS = 12;
 function comps() {   // позиция 0 — основная (F.raw, F.bs, F.sel, F.rawQty), дальше — добавленные
@@ -942,7 +1015,8 @@ function vPackForm() {
   const it = F.item, V = vProd_valid(), xs = comps(), many = xs.length > 1;
   if (!F.bManual) F.batch = prodBatch();
   let n = 1, h = '<div class="grid2"><div>';
-  h += card(n++, 'Что получится (пачки или ОПТ)', picker('item', PACK_PROD_G), true, V.m.item);
+  h += card(n++, 'Что получится (штуки или ОПТ)', picker('item', PACK_PROD_G), true, V.m.item);
+  if (it) { const rc = recipeCard(it, n); if (rc) { h += rc; n++; } }
   xs.forEach(c => {
     let body = picker(c.pk, PACK_RAW_G);
     if (c.raw) {
@@ -958,7 +1032,7 @@ function vPackForm() {
   if (F.raw && xs.length < MAX_COMPS) h += `<button class="btn wide" style="margin-bottom:16px" data-a="xadd">＋ Добавить ещё позицию (смесь, микс)</button>`;
   h += '</div><div>';
   if (many && V.total > 0) h += totalRow([{q: r3(V.total), u: xs[0].raw ? xs[0].raw.u : 'кг'}], 'Всего сырья');
-  if (it) h += card(n++, it.g === PACKED ? 'Сколько пачек получили' : 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
+  if (it) h += card(n++, it.g === PACKED ? 'Сколько штук получили' : 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
   if (it && F.raw) h += card(n++, 'Партия продукта', F.batch
     ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div><div class="hint">${F.bManual ? 'Введена вручную.' : 'Совпадает с партией сырья — так сохраняется прослеживаемость.'}</div>`
     : '<button class="btn pri wide" data-a="editbatch">Ввести номер партии</button>', true, V.m.batch);
@@ -968,6 +1042,7 @@ function vPackForm() {
   return h + foot(V);
 }
 function vPack_valid() {
+  applyRecipe();
   const it = F.item, xs = comps(), m = {}, miss = [], block = [], warn = [], seen = {};
   packFields(it, num(F.qty));
   if (!it) { m.item = 1; miss.push('продукт'); }
@@ -984,7 +1059,7 @@ function vPack_valid() {
     if (typeof c.sel === 'number' && c.sel > 0 && c.bs && c.bs[0]) warn.push((xs.length > 1 ? c.raw.n + ': н' : 'Сырьё н') + 'е по сроку (FEFO): есть партия ' + c.bs[0].b + ' до ' + c.bs[0].exp);
   });
   const q = num(F.qty);
-  if (it && !(q > 0)) { m.qty = 1; miss.push(it.g === PACKED ? 'сколько пачек' : 'сколько получили'); }
+  if (it && !(q > 0)) { m.qty = 1; miss.push(it.g === PACKED ? 'сколько штук' : 'сколько получили'); }
   if (it && F.raw && !F.batch) { m.batch = 1; miss.push('партия продукта'); }
   const brak = num(F.brak);
   if (F.brak && !(brak >= 0)) block.push('Неверный брак.');
@@ -1178,13 +1253,13 @@ async function doUndo() {
 /* ================= ОСТАТКИ ================= */
 /* Остатки: плитки групп → разделы (по формату и продукту) → позиции. Раскладка — по словам в названии. */
 const G_ICON = {'Сырьё': '🥛', 'Сублимат (кг)': '❄️', 'ГП опт (кг)': '📦', 'ГП фасованная (шт)': '🛍', 'Упаковка': '🏷'};
-const SEC_ORDER = ['Контейнеры', 'Пачки', '150 г', 'Шоу-боксы', 'Мороженое', 'Йогурт', 'Фрукты', 'Сулугуни и курт', 'Сулугуни', 'Курт',
+const SEC_ORDER = ['Контейнеры', 'Банки', '150 г', 'Шоу-боксы', 'Мороженое', 'Йогурт', 'Фрукты', 'Сулугуни и курт', 'Сулугуни', 'Курт',
   'Молочное', 'Добавки', 'Тара и банки', 'Этикетки', 'Пакеты и плёнка', 'Стики', 'Гофра и коробки', 'Прочее', ''];
 function stockSec(s) {   // → [раздел, подраздел]
   const n = ' ' + s.n.toLowerCase() + ' ', has = (...w) => w.some(x => n.includes(x));
   const fruit = has('ананас', 'клубник', 'яблок', 'банан', 'вишн') && !has('мороженое');
   if (s.g === 'ГП фасованная (шт)') {
-    const f = has('шоу бокс', 'шоу-бокс') ? 'Шоу-боксы' : has('контейнер') ? 'Контейнеры' : has(' 150 г') ? '150 г' : 'Пачки';
+    const f = has('шоу бокс', 'шоу-бокс') ? 'Шоу-боксы' : has('контейнер') ? 'Контейнеры' : has(' 150 г') ? '150 г' : 'Банки';
     return [f, has('сулугуни') ? 'Сулугуни' : has('курт') ? 'Курт' : has('йогурт') ? 'Йогурт' : fruit ? 'Фрукты' : 'Мороженое'];
   }
   if (s.g === 'Сублимат (кг)') return [has('сулугуни', 'курт') ? 'Сулугуни и курт' : has('йогурт') ? 'Йогурт' : fruit ? 'Фрукты' : 'Мороженое', ''];
@@ -1337,6 +1412,7 @@ const ACT = {
   bsel: v => { F.sel = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
   xsel: (k, v) => { F['sel_' + k] = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
   xadd: () => { F.xn = (F.xn || 0) + 1; F.dirty = true; render(); },
+  mixauto: () => { F.mixManual = false; F.rawTotal_auto = undefined; F.rawTotal = ''; render(); },
   xdel: k => {   // убрать позицию k, остальные сдвинуть
     k = +k; const n = F.xn || 0;
     for (let i = k; i < n; i++) ['raw_', 'bs_', 'sel_', 'rq_', 'q_raw_'].forEach(p => { F[p + i] = F[p + (i + 1)]; });
@@ -1395,6 +1471,8 @@ document.addEventListener('click', e => {
   const ni = e.target.closest('[data-ni]'); if (ni && NI) { niPress(ni.dataset.ni); return; }
   const el = e.target.closest('[data-a]'); if (!el || el.disabled) return;
   const [a, ...args] = el.dataset.a.split(':');
+  if (SCR === 'prod' && F.mode === 'pack' && F.recipe && (['bsel', 'xsel', 'xadd', 'xdel'].includes(a) ||
+      (['pick', 'recpick', 'unpick'].includes(a) && /^raw/.test(args[0])) || (a === 'kp' && /^(rawQty|rq_)/.test(args[0])))) F.mixManual = true;
   if (ACT[a]) ACT[a](...args, el);
 });
 document.addEventListener('input', e => {
