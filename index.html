@@ -156,6 +156,8 @@ const isoD = d => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 600
 const today = () => isoD(new Date());
 const daysAgo = n => isoD(new Date(Date.now() - n * 864e5));
 const ru = s => s ? s.split('-').reverse().join('.') : '';
+// «Годен до» по Справочнику: дата производства + срок (мес), как формула в таблице; '' — срока нет
+const expAuto = (it, d) => { if (!it || !(it.s > 0) || !d) return ''; const [y, m, dd] = d.split('-').map(Number); return isoD(new Date(y, m - 1 + it.s, dd)); };
 const ddmmyy = s => { const p = s.split('-'); return p[2] + p[1] + p[0].slice(2); };
 const itemBy = n => S.items.find(i => i.n === n);
 const stockOf = n => S.stock.find(s => s.n === n);
@@ -208,7 +210,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   // приход
   'Тип прихода': 'Kirim turi', 'Товар': 'Mahsulot', 'Номер партии': 'Partiya raqami', 'Введён вручную.': "Qo'lda kiritilgan.",
   'Ввести номер партии': 'Partiya raqamini kiritish', 'Для этого товара ещё не было партий — введите номер с этикетки или накладной.': "Bu mahsulot uchun hali partiya bo'lmagan — yorliq yoki yuk xatidagi raqamni kiriting.",
-  'Дата производства': 'Ishlab chiqarilgan sana', 'Сегодня': 'Bugun', 'Вчера': 'Kecha', 'Позавчера': 'Oldingi kun', 'Другая дата:': 'Boshqa sana:',
+  'Дата производства': 'Ishlab chiqarilgan sana', 'Годен до': 'Yaroqlilik muddati', '✕ Очистить': '✕ Tozalash', 'В Справочнике нет срока годности — укажите дату с этикетки или накладной.': "Ma'lumotnomada yaroqlilik muddati yo'q — yorliq yoki yuk xatidagi sanani kiriting.", '«Годен до» раньше даты производства.': "Yaroqlilik muddati ishlab chiqarilgan sanadan oldin.", 'Сегодня': 'Bugun', 'Вчера': 'Kecha', 'Позавчера': 'Oldingi kun', 'Другая дата:': 'Boshqa sana:',
   'Количество': 'Miqdor', 'Сначала выберите товар.': 'Avval mahsulotni tanlang.', 'Откуда / поставщик': 'Qayerdan / yetkazib beruvchi',
   'Другой…': 'Boshqa…', 'Не указывать': "Ko'rsatmaslik", 'Цена за единицу': 'Birlik narxi', 'Номер партии ': 'Partiya raqami',
   'Как на этикетке или в накладной, например С-4': "Yorliq yoki yuk xatidagidek, masalan С-4",
@@ -271,7 +273,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Дата производства не может быть в будущем.': "Ishlab chiqarilgan sana kelajakda bo'lishi mumkin emas.",
   'Фасовка оформляется сразу, без загрузки в сублиматор.': 'Qadoqlash sublimatorga yuklashsiz darhol rasmiylashtiriladi.'
 });
-const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya raqami', 'дата производства': 'ishlab chiqarilgan sana', 'количество': 'miqdor', 'причина': 'sabab',
+const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya raqami', 'дата производства': 'ishlab chiqarilgan sana', 'годен до': 'yaroqlilik muddati', 'количество': 'miqdor', 'причина': 'sabab',
   'продукт': 'mahsulot', 'сырьё': 'xomashyo', 'сколько сырья': 'xomashyo miqdori', 'сколько пачек': 'qadoqlar soni', 'сколько штук': 'necha dona', 'партия продукта': 'mahsulot partiyasi',
   'загрузка': 'yuklama', 'вес после сублимации': "sublimatsiyadan keyingi og'irlik", 'факт хотя бы по одной партии': "kamida bitta partiya bo'yicha fakt"};
 const u = x => UNITS_UZ[x] || x, ty = x => TYPES_UZ[x] || x;
@@ -526,7 +528,7 @@ function setV(key, v) { F.dirty = true; if (key.startsWith('fact-')) { F.facts[k
 const TITLES = {home: CFG.APP_NAME, in: '📥 Приход', out: '📤 Расход', prod: '🏭 Выпуск', stock: '📋 Остатки', inv: '🧮 Инвентаризация', attn: '⚠ Внимание', login: CFG.APP_NAME, err: CFG.APP_NAME};
 function go(scr, keep) {
   SCR = scr; F = Object.assign({dirty: false}, keep || {}); OPTS = {}; PICKG = {};
-  if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), qty: '', from: '', price: ''});
+  if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), exp: '', qty: '', from: '', price: ''});
   if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
   if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
@@ -750,6 +752,12 @@ function vIn() {
     const d = F.date, dd = [[today(), 'Сегодня'], [daysAgo(1), 'Вчера'], [daysAgo(2), 'Позавчера']];
     h += card(n++, 'Дата производства', `<div class="chips">${dd.map(x => `<button class="chip ${d === x[0] ? 'on' : ''}" data-a="setdate:${x[0]}">${x[1]}<br><small>${ru(x[0])}</small></button>`).join('')}</div>
       <div class="hint" style="margin:12px 0 6px">Другая дата:</div><input class="date" type="date" data-date="date" value="${esc(d)}" max="${today()}">`, true, V.m.date);
+    // «Годен до» (с 23.10.2026): обязателен, если в Справочнике нет срока; иначе — только если на этикетке другой срок
+    const auto = expAuto(it, F.date);
+    h += card(n++, 'Годен до', `<input class="date" type="date" data-date="exp" value="${esc(F.exp)}" min="${esc(F.date || '')}">
+      ${F.exp ? '<button class="chip" data-a="clr:exp">✕ Очистить</button>' : ''}
+      <div class="hint">${auto ? (F.exp ? 'По Справочнику было бы ' + ru(auto) + '. Записываем дату с этикетки.' : 'По Справочнику: ' + ru(auto) + ' (срок ' + it.s + ' мес). Заполните, только если на этикетке другая дата.')
+        : 'В Справочнике нет срока годности — укажите дату с этикетки или накладной.'}</div>`, !auto, V.m.exp);
   }
   h += '</div><div>';
   h += card(n++, 'Количество', it ? qbox('qty', 'Количество: ' + it.n, it.u, unitInt(it.u)) : '<div class="hint">Сначала выберите товар.</div>', true, V.m.qty);
@@ -768,9 +776,13 @@ function vIn_valid() {
   if (it && !pack && !F.date) { m.date = 1; miss.push('дата производства'); }
   if (!(num(F.qty) > 0)) { m.qty = 1; miss.push('количество'); }
   if (F.date && F.date > today()) block.push('Дата производства не может быть в будущем.');
-  const sum = it ? [['Операция', 'Приход · ' + F.type], ['Товар', it.n], ...(pack ? [] : [['Партия', F.batch], ['Дата производства', ru(F.date)]]),
+  const auto = it && !pack ? expAuto(it, F.date) : '';
+  if (it && !pack && !auto && !F.exp) { m.exp = 1; miss.push('годен до'); }
+  if (it && !pack && F.exp && F.date && F.exp < F.date) block.push('«Годен до» раньше даты производства.');
+  if (it && !pack && (F.exp || auto) && (F.exp || auto) < today()) warn.push('Партия уже просрочена (годен до ' + ru(F.exp || auto) + '). Проверьте даты.');
+  const sum = it ? [['Операция', 'Приход · ' + F.type], ['Товар', it.n], ...(pack ? [] : [['Партия', F.batch], ['Дата производства', ru(F.date)], ['Годен до', F.exp ? ru(F.exp) : auto ? ru(auto) + ' (по Справочнику)' : '—']]),
     ['Количество', fmt(num(F.qty)) + ' ' + it.u], ['Откуда', F.from || '—'], ...(F.price ? [['Цена / сумма', fmt(num(F.price)) + ' сум · итого ' + fmt(Math.round(num(F.price) * num(F.qty))) + ' сум']] : [])] : [];
-  return {m, miss, block, warn, sum, action: 'in', data: it ? {type: F.type, item: it.n, qty: F.qty, batch: pack ? '' : F.batch, date: pack ? '' : ru(F.date), from: F.from, price: F.price} : null};
+  return {m, miss, block, warn, sum, action: 'in', data: it ? {type: F.type, item: it.n, qty: F.qty, batch: pack ? '' : F.batch, date: pack ? '' : ru(F.date), exp: pack ? '' : ru(F.exp), from: F.from, price: F.price} : null};
 }
 
 /* ================= РАСХОД ================= */
@@ -1483,6 +1495,7 @@ document.addEventListener('input', e => {
   if (s) { F['q_' + s] = e.target.value; drawPickRes(s); }
 });
 document.addEventListener('change', e => {
+  if (e.target.dataset.date === 'exp') { F.exp = e.target.value || ''; F.dirty = true; render(); return; }
   if (e.target.dataset.date) { const v = e.target.value; if (v) { F.date = v > today() ? today() : v; F.dirty = true; render(); } }
 });
 
