@@ -273,7 +273,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Дата производства не может быть в будущем.': "Ishlab chiqarilgan sana kelajakda bo'lishi mumkin emas.",
   'Фасовка оформляется сразу, без загрузки в сублиматор.': 'Qadoqlash sublimatorga yuklashsiz darhol rasmiylashtiriladi.'
 });
-const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya raqami', 'дата производства': 'ishlab chiqarilgan sana', 'годен до': 'yaroqlilik muddati', 'количество': 'miqdor', 'причина': 'sabab',
+const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya raqami', 'дата производства': 'ishlab chiqarilgan sana', 'годен до': 'yaroqlilik muddati', 'оплата': "to'lov", 'количество': 'miqdor', 'причина': 'sabab',
   'продукт': 'mahsulot', 'сырьё': 'xomashyo', 'сколько сырья': 'xomashyo miqdori', 'сколько пачек': 'qadoqlar soni', 'сколько штук': 'necha dona', 'партия продукта': 'mahsulot partiyasi',
   'загрузка': 'yuklama', 'вес после сублимации': "sublimatsiyadan keyingi og'irlik", 'факт хотя бы по одной партии': "kamida bitta partiya bo'yicha fakt"};
 const u = x => UNITS_UZ[x] || x, ty = x => TYPES_UZ[x] || x;
@@ -528,7 +528,7 @@ function setV(key, v) { F.dirty = true; if (key.startsWith('fact-')) { F.facts[k
 const TITLES = {home: CFG.APP_NAME, in: '📥 Приход', out: '📤 Расход', prod: '🏭 Выпуск', stock: '📋 Остатки', inv: '🧮 Инвентаризация', rec: '📝 Мои записи', attn: '⚠ Внимание', login: CFG.APP_NAME, err: CFG.APP_NAME};
 function go(scr, keep) {
   SCR = scr; F = Object.assign({dirty: false}, keep || {}); OPTS = {}; PICKG = {};
-  if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), exp: '', qty: '', from: '', price: ''});
+  if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), exp: '', qty: '', from: '', price: '', pay: ''});
   if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
   if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
@@ -766,8 +766,11 @@ function vIn() {
   const fromList = S.recent.from || [], other = F.from && !fromList.includes(F.from);
   h += card(n++, 'Откуда / поставщик', chips('from', fromList, F.from,
     `<button class="chip ${other ? 'on' : ''}" data-a="otherfrom">${other ? esc(F.from) : 'Другой…'}</button>${F.from ? '<button class="chip" data-a="clr:from">✕ Не указывать</button>' : ''}`), false);
-  h += card(n++, 'Цена за единицу', qbox('price', 'Цена за 1 ' + (it ? it.u : 'ед.'), 'сум', true) +
-    (F.price && F.qty ? `<div class="msg info">Сумма: ${fmt(Math.round(num(F.price) * num(F.qty)))} сум</div>` : ''), false);
+  h += card(n++, 'Цена за единицу без НДС', qbox('price', 'Цена за 1 ' + (it ? it.u : 'ед.') + ' без НДС', 'сум', true) +
+    (F.price && F.qty ? `<div class="msg info">Сумма без НДС: ${fmt(Math.round(num(F.price) * num(F.qty)))} сум${F.pay === 'Перечисление' ? `<br>К оплате с НДС 12%: <b>${fmt(Math.round(num(F.price) * num(F.qty) * 1.12))} сум</b>` : ''}</div>` : ''), false);
+  // оплата закупки (с 23.10.2026): наличные — без НДС, перечисление — с НДС 12%
+  h += card(n++, 'Оплата', chips('pay', ['Наличные', 'Перечисление'], F.pay) +
+    '<div class="hint">Перечисление — с НДС 12% (приложение добавит сам). Цену вводите без НДС.</div>', !!F.price, V.m.pay);
   h += '</div></div>';
   return h + foot(V);
 }
@@ -780,11 +783,12 @@ function vIn_valid() {
   if (F.date && F.date > today()) block.push('Дата производства не может быть в будущем.');
   const auto = it && !pack ? expAuto(it, F.date) : '';
   if (it && !pack && !auto && !F.exp) { m.exp = 1; miss.push('годен до'); }
+  if (F.price && !F.pay) { m.pay = 1; miss.push('оплата'); }
   if (it && !pack && F.exp && F.date && F.exp < F.date) block.push('«Годен до» раньше даты производства.');
   if (it && !pack && (F.exp || auto) && (F.exp || auto) < today()) warn.push('Партия уже просрочена (годен до ' + ru(F.exp || auto) + '). Проверьте даты.');
   const sum = it ? [['Операция', 'Приход · ' + F.type], ['Товар', it.n], ...(pack ? [] : [['Партия', F.batch], ['Дата производства', ru(F.date)], ['Годен до', F.exp ? ru(F.exp) : auto ? ru(auto) + ' (по Справочнику)' : '—']]),
-    ['Количество', fmt(num(F.qty)) + ' ' + it.u], ['Откуда', F.from || '—'], ...(F.price ? [['Цена / сумма', fmt(num(F.price)) + ' сум · итого ' + fmt(Math.round(num(F.price) * num(F.qty))) + ' сум']] : [])] : [];
-  return {m, miss, block, warn, sum, action: 'in', data: it ? {type: F.type, item: it.n, qty: F.qty, batch: pack ? '' : F.batch, date: pack ? '' : ru(F.date), exp: pack ? '' : ru(F.exp), from: F.from, price: F.price} : null};
+    ['Количество', fmt(num(F.qty)) + ' ' + it.u], ['Откуда', F.from || '—'], ...(F.price ? [['Цена / сумма без НДС', fmt(num(F.price)) + ' сум · итого ' + fmt(Math.round(num(F.price) * num(F.qty))) + ' сум'], ['Оплата', (F.pay || '—') + (F.pay === 'Перечисление' ? ' · к оплате с НДС ' + fmt(Math.round(num(F.price) * num(F.qty) * 1.12)) + ' сум' : '')]] : [])] : [];
+  return {m, miss, block, warn, sum, action: 'in', data: it ? {type: F.type, item: it.n, qty: F.qty, batch: pack ? '' : F.batch, date: pack ? '' : ru(F.date), exp: pack ? '' : ru(F.exp), from: F.from, price: F.price, pay: F.price ? F.pay : ''} : null};
 }
 
 /* ================= РАСХОД ================= */
@@ -1271,7 +1275,7 @@ async function doUndo() {
 // Сотрудник — свои записи за 7 дней, руководитель — все за 30. Товар не меняется: неверный товар — удалить и внести заново.
 const REC_F = {
   'Приход': [['type', 'Тип', 'type_in'], ['qty', 'Количество', 'num'], ['batch', 'Партия', 'text'], ['date', 'Дата производства', 'date'],
-             ['exp', 'Годен до (если на этикетке другая дата)', 'date'], ['from', 'Откуда / поставщик', 'text'], ['price', 'Цена за единицу, сум', 'num']],
+             ['exp', 'Годен до (если на этикетке другая дата)', 'date'], ['from', 'Откуда / поставщик', 'text'], ['price', 'Цена за единицу без НДС, сум', 'num'], ['pay', 'Оплата', 'pay']],
   'Расход': [['type', 'Тип', 'type_out'], ['qty', 'Количество', 'num'], ['batch', 'Партия', 'text'], ['why', 'Кому / причина', 'text']],
   'Выпуск': [['qty', 'Сколько получили', 'num'], ['batch', 'Партия продукта', 'text'], ['rawQty', 'Сколько сырья взяли', 'num'], ['rawBatch', 'Партия сырья', 'text'], ['brak', 'Брак, кг', 'num']]
 };
@@ -1308,8 +1312,8 @@ function vRecEdit(x) {
   (REC_F[x.sheet] || []).forEach(([k, label, type]) => {
     const v = x.f[k] == null ? '' : x.f[k];
     h += `<div class="lbl" style="margin-top:12px">${esc(label)}</div>`;
-    if (type === 'type_in' || type === 'type_out') {
-      const list = (type === 'type_in' ? S.types.in : S.types.out) || [];
+    if (type === 'type_in' || type === 'type_out' || type === 'pay') {
+      const list = type === 'pay' ? ['', 'Наличные', 'Перечисление'] : (type === 'type_in' ? S.types.in : S.types.out) || [];
       h += `<select class="txt" id="re_${k}" style="width:100%;min-height:56px;font-size:20px;padding:8px 12px;border-radius:12px">${(list.includes(v) ? list : [v].concat(list)).map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
     } else if (type === 'date') h += `<input class="date" type="date" id="re_${k}" value="${esc(ruToIso(v))}">`;
     else h += `<input class="txt" id="re_${k}" ${type === 'num' ? 'inputmode="decimal"' : ''} value="${esc(v)}" autocomplete="off">`;
