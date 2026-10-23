@@ -525,13 +525,14 @@ function getV(key) { if (key.startsWith('fact-')) return (F.facts || {})[key.sli
 function setV(key, v) { F.dirty = true; if (key.startsWith('fact-')) { F.facts[key.slice(5)] = v; } else F[key] = v; }
 
 /* ---------------- навигация ---------------- */
-const TITLES = {home: CFG.APP_NAME, in: '📥 Приход', out: '📤 Расход', prod: '🏭 Выпуск', stock: '📋 Остатки', inv: '🧮 Инвентаризация', attn: '⚠ Внимание', login: CFG.APP_NAME, err: CFG.APP_NAME};
+const TITLES = {home: CFG.APP_NAME, in: '📥 Приход', out: '📤 Расход', prod: '🏭 Выпуск', stock: '📋 Остатки', inv: '🧮 Инвентаризация', rec: '📝 Мои записи', attn: '⚠ Внимание', login: CFG.APP_NAME, err: CFG.APP_NAME};
 function go(scr, keep) {
   SCR = scr; F = Object.assign({dirty: false}, keep || {}); OPTS = {}; PICKG = {};
   if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), exp: '', qty: '', from: '', price: ''});
   if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
   if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
+  if (scr === 'rec') { Object.assign(F, {list: null, sel: null, q: ''}); setTimeout(recLoad, 0); }
   if (scr === 'stock') Object.assign(F, {q: '', g: ls('sklad_sg') || 'Все', all: false, open: {}, sec: JSON.parse(ls('sklad_sec') || '{}')});
   render(); window.scrollTo(0, 0);
 }
@@ -553,7 +554,7 @@ function topBar() {
     <h1>${esc(TITLES[SCR] || '')}</h1><button class="lang" data-a="lang" aria-label="Til / Язык">${LANG === 'uz' ? 'RU' : 'UZ'}</button><div class="who">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
 }
 function render() {
-  const v = ({home: vHome, in: vIn, out: vOut, prod: vProd, stock: vStock, inv: vInv, attn: vAttn, login: vLogin, err: vErr})[SCR];
+  const v = ({home: vHome, in: vIn, out: vOut, prod: vProd, stock: vStock, inv: vInv, rec: vRec, attn: vAttn, login: vLogin, err: vErr})[SCR];
   app.innerHTML = topBar() + '<div class="wrap">' + v() + '</div>';
   if (SCR === 'stock') drawStockList();
   document.querySelectorAll('[data-res]').forEach(el => drawPickRes(el.dataset.res));
@@ -726,6 +727,7 @@ function vHome() {
     ${t('prod', '🏭', 'Выпуск', 'загрузка, выгрузка, фасовка')}
     ${t('stock', '📋', 'Остатки', 'что есть на складе')}
     ${t('inv', '🧮', 'Инвентаризация', 'пересчёт по факту')}
+    ${t('rec', '📝', 'Мои записи', S.admin ? 'изменить или удалить (все)' : 'изменить или удалить')}
   </div>` + '<div style="height:16px"></div>' + undo;
 }
 
@@ -905,7 +907,8 @@ function packRule(it) {
   if (it.g !== PACKED) return null;
   const cont = n.includes('контейнер');
   if ((cont && g === '20') || /^курт 30 г$/.test(n)) return {tara: 'Тара Курт 80–100 мл', filmPer: 4, boxPer: 36};
-  if ((cont && g === '30') || /^сулугуни 50 г$/.test(n)) return {tara: 'Тара Сулугуни/Geladinho 150–180 мл', filmPer: 4, boxPer: 36};
+  if (/^сулугуни 50 г$/.test(n)) return {tara: 'Тара Сулугуни/Geladinho 150–180 мл', filmPer: 4, boxPer: 24};   // 24 шт в коробке
+  if (cont && g === '30') return {tara: 'Тара Сулугуни/Geladinho 150–180 мл', filmPer: 4, boxPer: 36};
   if (cont && g === '100') return {tara: /сникерс|ммденс/.test(n) ? 'Тара ОПТ 500 мл' : 'Тара ОПТ 900 мл', filmPer: 1, boxPer: 0};
   return null;
 }
@@ -1264,6 +1267,83 @@ async function doUndo() {
   } catch (e) { if (e.kind !== 'auth') await dialog(`<div class="big-bad">Не получилось</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
 }
 
+/* ================= МОИ ЗАПИСИ: изменить / удалить (с 23.10.2026) ================= */
+// Сотрудник — свои записи за 7 дней, руководитель — все за 30. Товар не меняется: неверный товар — удалить и внести заново.
+const REC_F = {
+  'Приход': [['type', 'Тип', 'type_in'], ['qty', 'Количество', 'num'], ['batch', 'Партия', 'text'], ['date', 'Дата производства', 'date'],
+             ['exp', 'Годен до (если на этикетке другая дата)', 'date'], ['from', 'Откуда / поставщик', 'text'], ['price', 'Цена за единицу, сум', 'num']],
+  'Расход': [['type', 'Тип', 'type_out'], ['qty', 'Количество', 'num'], ['batch', 'Партия', 'text'], ['why', 'Кому / причина', 'text']],
+  'Выпуск': [['qty', 'Сколько получили', 'num'], ['batch', 'Партия продукта', 'text'], ['rawQty', 'Сколько сырья взяли', 'num'], ['rawBatch', 'Партия сырья', 'text'], ['brak', 'Брак, кг', 'num']]
+};
+const REC_IC = {'Приход': '📥', 'Расход': '📤', 'Выпуск': '🏭'};
+const ruToIso = s => { const m = String(s || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/); return m ? m[3] + '-' + m[2] + '-' + m[1] : ''; };
+async function recLoad() {
+  try { const j = await call('rec_list', {}, {msg: 'Загружаю записи…'}); F.list = j.data; render(); }
+  catch (e) { if (e.kind !== 'auth') { F.list = {items: [], err: e.message}; render(); } }
+}
+function vRec() {
+  const L = F.list;
+  if (!L) return '<div class="card"><div class="hint">Загрузка…</div></div>';
+  if (L.err) return `<div class="msg bad">${esc(L.err)}</div><button class="btn wide" data-a="recreload">Обновить</button>`;
+  if (F.sel != null) return vRecEdit(L.items[F.sel]);
+  const q = (F.q || '').toLowerCase();
+  const items = L.items.map((x, i) => [x, i]).filter(([x]) => !q || (x.item + ' ' + x.f.batch + ' ' + x.who + ' ' + x.type).toLowerCase().includes(q));
+  let h = `<div class="hint" style="margin:0 0 10px">${L.admin ? 'Все записи за ' + L.days + ' дней.' : 'Ваши записи за ' + L.days + ' дней. Более старые исправляет руководитель.'}
+    Неверный товар — удалите запись и внесите заново.</div>
+    <input class="txt" placeholder="Поиск: товар, партия${L.admin ? ', кто' : ''}" value="${esc(F.q || '')}" data-recq="1" autocomplete="off" style="margin-bottom:12px">`;
+  if (!items.length) h += '<div class="card"><div class="hint">Записей нет.</div></div>';
+  items.slice(0, 80).forEach(([x, i]) => {
+    const unitless = x.sheet === 'Выпуск' ? ' ← ' + esc(x.raw) + ' ' + esc(x.f.rawQty) : '';
+    h += `<div class="card"><div class="sub">${REC_IC[x.sheet] || ''} ${esc(x.sheet)} · ${esc(x.type)} · ${esc(x.at)}${L.admin ? ' · ' + esc(x.who) : ''}</div>
+      <div class="nm" style="font-size:22px;font-weight:800;margin:6px 0">${esc(x.item)}</div>
+      <div>${esc(x.f.qty)}${x.f.batch ? ' · партия ' + esc(x.f.batch) : ''}${unitless}${x.f.why ? ' · ' + esc(x.f.why) : ''}</div>
+      ${x.note && x.note.indexOf('✎') >= 0 ? '<div class="hint">' + esc(x.note.slice(x.note.indexOf('✎'))) + '</div>' : ''}
+      <div class="row" style="margin-top:10px"><button class="btn" data-a="recedit:${i}">✎ Изменить</button><button class="btn bad" data-a="recdel:${i}">🗑 Удалить</button></div></div>`;
+  });
+  return h;
+}
+function vRecEdit(x) {
+  let h = `<div class="card"><div class="sub">${REC_IC[x.sheet] || ''} ${esc(x.sheet)} · ${esc(x.at)}${F.list.admin ? ' · ' + esc(x.who) : ''}</div>
+    <div class="nm" style="font-size:22px;font-weight:800;margin:6px 0">${esc(x.item)}</div>${x.raw ? '<div class="hint">Из чего: ' + esc(x.raw) + '</div>' : ''}</div><div class="card">`;
+  (REC_F[x.sheet] || []).forEach(([k, label, type]) => {
+    const v = x.f[k] == null ? '' : x.f[k];
+    h += `<div class="lbl" style="margin-top:12px">${esc(label)}</div>`;
+    if (type === 'type_in' || type === 'type_out') {
+      const list = (type === 'type_in' ? S.types.in : S.types.out) || [];
+      h += `<select class="txt" id="re_${k}" style="width:100%;min-height:56px;font-size:20px;padding:8px 12px;border-radius:12px">${(list.includes(v) ? list : [v].concat(list)).map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
+    } else if (type === 'date') h += `<input class="date" type="date" id="re_${k}" value="${esc(ruToIso(v))}">`;
+    else h += `<input class="txt" id="re_${k}" ${type === 'num' ? 'inputmode="decimal"' : ''} value="${esc(v)}" autocomplete="off">`;
+  });
+  return h + `</div><div class="row"><button class="btn" data-a="recback">Отмена</button><button class="btn pri" data-a="recsave">Сохранить</button></div>`;
+}
+async function recSave() {
+  const x = F.list.items[F.sel], ch = {};
+  (REC_F[x.sheet] || []).forEach(([k, , type]) => {
+    const el = document.getElementById('re_' + k); if (!el) return;
+    let v = el.value.trim(); if (type === 'date') v = ru(v);
+    const was = x.f[k] == null ? '' : String(x.f[k]);
+    if (type === 'num' && v !== '' && was !== '' && Number(v.replace(',', '.')) === Number(was.replace(',', '.'))) return;
+    if (v !== was) ch[k] = v;
+  });
+  if (!Object.keys(ch).length) return dialog('<h3>Ничего не изменено.</h3>', [{t: 'Понятно', cls: 'pri', v: 1}]);
+  try {
+    const j = await call('rec_edit', {sheet: x.sheet, row: x.row, ts: x.ts, item: x.item, changes: ch}, {write: true, msg: 'Сохраняю…'});
+    F.list = j.data; F.sel = null; S.bc = {};
+    await dialog(`<div class="big-ok">✅ ИЗМЕНЕНО</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]);
+    refreshQuiet(); render();
+  } catch (e) { if (e.kind !== 'auth') await dialog(`<div class="big-bad">❌ НЕ ИЗМЕНЕНО</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
+}
+async function recDel(i) {
+  const x = F.list.items[i];
+  if (!(await ask('Удалить запись?\n' + x.sheet + ' · ' + x.type + ' · ' + x.item + ' · ' + x.f.qty + (x.f.batch ? ' · партия ' + x.f.batch : ''), 'Да, удалить', 'Нет'))) return;
+  try {
+    const j = await call('rec_delete', {sheet: x.sheet, row: x.row, ts: x.ts, item: x.item}, {write: true, msg: 'Удаляю…'});
+    F.list = j.data; F.sel = null; S.bc = {};
+    await dialog(`<div class="big-ok">🗑 Удалено</div><div class="pre">${esc(j.text)}</div>`, [{t: 'Хорошо', cls: 'pri', v: 1}]);
+    refreshQuiet(); render();
+  } catch (e) { if (e.kind !== 'auth') await dialog(`<div class="big-bad">❌ НЕ УДАЛЕНО</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
+}
+
 /* ================= ОСТАТКИ ================= */
 /* Остатки: плитки групп → разделы (по формату и продукту) → позиции. Раскладка — по словам в названии. */
 const G_ICON = {'Сырьё': '🥛', 'Сублимат (кг)': '❄️', 'ГП опт (кг)': '📦', 'ГП фасованная (шт)': '🛍', 'Упаковка': '🏷'};
@@ -1421,6 +1501,11 @@ const ACT = {
   unpick: key => { if (/^raw_\d+$/.test(key)) { const k = key.slice(4); F[key] = null; F['bs_' + k] = null; F['sel_' + k] = 0; F['rq_' + k] = ''; render(); return; }
     F[key] = null; if (key === 'fprod') { render(); return; } if (key === 'item' && SCR !== 'prod' || key === 'raw') { F.bs = null; F.sel = 0; F.facts = {}; } F.qty = ''; if (key === 'raw') F.rawQty = ''; F.bManual = false; render(); },
   unloadgo: () => { go('prod', {mode: 'unload'}); },
+  recedit: i => { F.sel = +i; render(); window.scrollTo(0, 0); },
+  recback: () => { F.sel = null; render(); },
+  recsave: () => recSave(),
+  recdel: i => recDel(+i),
+  recreload: () => { F.list = null; render(); recLoad(); },
   pmode: m => { go('prod', {mode: m}); },
   lsel: i => { F.load = +i; F.qty = ''; F.brak = ''; F.dirty = true; render(); },
   bsel: v => { F.sel = v === 'auto' ? 'auto' : +v; F.dirty = true; render(); },
@@ -1492,6 +1577,7 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   const s = e.target.dataset.search;
   if (s === 'stockq') { F.q = e.target.value; drawStockList(); return; }
+  if (e.target.dataset.recq) { F.q = e.target.value; const pos = e.target.selectionStart; render(); const el = document.querySelector('[data-recq]'); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) {} } return; }
   if (s) { F['q_' + s] = e.target.value; drawPickRes(s); }
 });
 document.addEventListener('change', e => {
