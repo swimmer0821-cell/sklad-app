@@ -769,8 +769,8 @@ function vIn() {
   h += card(n++, 'Цена за единицу без НДС', qbox('price', 'Цена за 1 ' + (it ? it.u : 'ед.') + ' без НДС', 'сум', true) +
     (F.price && F.qty ? `<div class="msg info">Сумма без НДС: ${fmt(Math.round(num(F.price) * num(F.qty)))} сум${F.pay === 'Перечисление' ? `<br>К оплате с НДС 12%: <b>${fmt(Math.round(num(F.price) * num(F.qty) * 1.12))} сум</b>` : ''}</div>` : ''), false);
   // оплата закупки (с 23.10.2026): наличные — без НДС, перечисление — с НДС 12%
-  h += card(n++, 'Оплата', chips('pay', ['Наличные', 'Перечисление'], F.pay) +
-    '<div class="hint">Перечисление — с НДС 12% (приложение добавит сам). Цену вводите без НДС.</div>', !!F.price, V.m.pay);
+  h += card(n++, 'Оплата', chips('pay', ['Наличные', 'Карта', 'Перечисление'], F.pay) +
+    '<div class="hint">Наличные и карта — без НДС. Перечисление — с НДС 12% (приложение добавит сам). Цену вводите без НДС.</div>', !!F.price, V.m.pay);
   h += '</div></div>';
   return h + foot(V);
 }
@@ -1313,7 +1313,7 @@ function vRecEdit(x) {
     const v = x.f[k] == null ? '' : x.f[k];
     h += `<div class="lbl" style="margin-top:12px">${esc(label)}</div>`;
     if (type === 'type_in' || type === 'type_out' || type === 'pay') {
-      const list = type === 'pay' ? ['', 'Наличные', 'Перечисление'] : (type === 'type_in' ? S.types.in : S.types.out) || [];
+      const list = type === 'pay' ? ['', 'Наличные', 'Карта', 'Перечисление'] : (type === 'type_in' ? S.types.in : S.types.out) || [];
       h += `<select class="txt" id="re_${k}" style="width:100%;min-height:56px;font-size:20px;padding:8px 12px;border-radius:12px">${(list.includes(v) ? list : [v].concat(list)).map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
     } else if (type === 'date') h += `<input class="date" type="date" id="re_${k}" value="${esc(ruToIso(v))}">`;
     else h += `<input class="txt" id="re_${k}" ${type === 'num' ? 'inputmode="decimal"' : ''} value="${esc(v)}" autocomplete="off">`;
@@ -1603,7 +1603,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-23-pay';
+const APP_VER = '2026-10-23-card';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
