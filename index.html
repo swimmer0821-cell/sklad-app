@@ -1602,6 +1602,18 @@ async function start() {
   catch (e) { if (e.kind === 'auth') return; SCR = 'err'; F = {err: e.message}; render(); }
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
+// Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
+const APP_VER = '2026-10-23-pay';
+async function checkUpdate() {
+  if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
+  try {
+    const t = await (await fetch('./index.html?v=' + Date.now(), {cache: 'no-store'})).text();
+    const m = t.match(/const APP_VER = '([^']+)'/);
+    if (m && m[1] !== APP_VER) location.reload();
+  } catch (e) {}
+}
+setInterval(checkUpdate, 5 * 60000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
 document.documentElement.lang = LANG; if (LANG === 'uz') document.title = 'SUB PROFI ombori';
 start();
 if ('serviceWorker' in navigator && !TG) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {}));
