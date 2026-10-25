@@ -40,9 +40,9 @@ const CFG = {
   .top .back{min-height:56px;min-width:130px;padding:0 18px;border:3px solid #fff;border-radius:14px;background:transparent;color:#fff;font-weight:800;font-size:20px}
   .wrap{max-width:1150px;margin:0 auto;padding:16px 16px 24px}
   h2{font-size:21px;margin:22px 4px 12px}
-  .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-  @media (min-width:900px){ .tiles{grid-template-columns:repeat(3,1fr)} }
-  .tile{min-height:160px;border-radius:20px;background:var(--card);border:3px solid var(--line);font-size:28px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px}
+  .tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  @media (min-width:900px){ .tiles{grid-template-columns:repeat(3,minmax(0,1fr))} }
+  .tile{min-width:0;min-height:160px;border-radius:20px;background:var(--card);border:3px solid var(--line);font-size:28px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px;text-align:center;-webkit-hyphens:auto;hyphens:auto;overflow-wrap:break-word}
   .tile .ic{font-size:48px;line-height:1}
   .tile small{font-size:18px;font-weight:500;color:var(--muted)}
   .tile:active{background:var(--pri-bg);border-color:var(--pri)}
@@ -120,6 +120,21 @@ const CFG = {
   .empty{text-align:center;color:var(--muted);padding:28px 10px;font-size:19px}
   .pinbox{font-size:52px;letter-spacing:18px;text-align:center;min-height:80px;border:3px solid var(--pri);border-radius:14px;margin-bottom:14px;padding:6px}
   .list-sm{font-size:18px}
+  /* 25.10.2026: телефон — без прокрутки вбок, название раздела в шапке видно */
+  .opt.expired{border-color:var(--bad);background:var(--bad-bg)}
+  @media (max-width:520px){
+    .top{gap:8px;padding:8px 10px;min-height:64px}
+    .top h1{font-size:20px}
+    .top .back{min-width:0;min-height:52px;padding:0 12px;font-size:18px}
+    .top .lang{min-width:52px;min-height:48px;padding:0 8px;font-size:17px}
+    .top .who.inner{display:none}
+    .wrap{padding:12px 12px 20px}
+    .tiles{gap:12px}
+    .tile{min-height:140px;font-size:21px;padding:10px 6px}
+    .tile .ic{font-size:42px}
+    .tile small{font-size:16px}
+    .banner{font-size:18px;padding:12px 14px}
+  }
 </style>
 </head>
 <body>
@@ -551,7 +566,7 @@ function topBar() {
   const home = SCR === 'home' || SCR === 'login' || SCR === 'err';
   if (TG) { home ? TG.BackButton.hide() : TG.BackButton.show(); }
   return `<div class="top">${home || TG ? '' : '<button class="back" data-a="back">← Назад</button>'}
-    <h1>${esc(TITLES[SCR] || '')}</h1><button class="lang" data-a="lang" aria-label="Til / Язык">${LANG === 'uz' ? 'RU' : 'UZ'}</button><div class="who">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
+    <h1>${esc(TITLES[SCR] || '')}</h1><button class="lang" data-a="lang" aria-label="Til / Язык">${LANG === 'uz' ? 'RU' : 'UZ'}</button><div class="who${home ? '' : ' inner'}">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
 }
 function render() {
   const v = ({home: vHome, in: vIn, out: vOut, prod: vProd, stock: vStock, inv: vInv, rec: vRec, attn: vAttn, login: vLogin, err: vErr})[SCR];
@@ -1436,7 +1451,7 @@ function vAttn() {
     <b style="font-size:24px;color:${c.n > 0 ? 'var(--bad)' : 'var(--ok)'}">${fmt(c.n)}</b></div>`).join('') + '</div>';
   const uq = x => { const st = S.stock.find(s => s.n === x.n); return {q: x.q, u: st ? st.u : ''}; };
   const soon = S.expiry.filter(x => x.d <= CFG.EXPIRY_WARN_DAYS), later = S.expiry.filter(x => x.d > CFG.EXPIRY_WARN_DAYS);
-  const ex = x => `<div class="opt" style="cursor:default"><div><div class="nm">${x.d < 0 ? '⛔' : '⚠'} ${esc(x.n)}</div><div class="sub">партия ${esc(x.b)} · до ${esc(x.exp)} · ${x.d < 0 ? 'просрочена' : 'осталось ' + x.d + ' дн'}</div></div><div class="q">${fmt(x.q)}</div></div>`;
+  const ex = x => `<div class="opt${x.d < 0 ? ' expired' : ''}" style="cursor:default"><div><div class="nm">${x.d < 0 ? '⛔' : '⚠'} ${esc(x.n)}</div><div class="sub">партия ${esc(x.b)} · до ${esc(x.exp)} · ${x.d < 0 ? '<b style="color:var(--bad)">просрочена</b>' : 'осталось ' + x.d + ' дн'}</div></div><div class="q">${fmt(x.q)} ${esc(uq(x).u)}</div></div>`;
   h += `<h2>Сроки годности меньше ${CFG.EXPIRY_WARN_DAYS} дней</h2>` + (soon.length ? soon.map(ex).join('') + totalRow(soon.map(uq)) : '<div class="msg ok">✅ Таких партий нет</div>');
   if (later.length) h += `<h2>Сроки ${CFG.EXPIRY_WARN_DAYS}–60 дней</h2>` + later.map(ex).join('') + totalRow(later.map(uq));
   const pr = S.stock.filter(s => s.st && s.st !== 'ок' && s.st !== 'нет в наличии');
@@ -1603,7 +1618,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-23-card';
+const APP_VER = '2026-10-25-mobile';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
