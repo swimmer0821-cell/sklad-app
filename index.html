@@ -44,6 +44,14 @@ const CFG = {
   @media (min-width:900px){ .tiles{grid-template-columns:repeat(3,minmax(0,1fr))} }
   .tile{min-width:0;min-height:160px;border-radius:20px;background:var(--card);border:3px solid var(--line);font-size:28px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px;text-align:center;-webkit-hyphens:auto;hyphens:auto;overflow-wrap:break-word}
   .tile .ic{font-size:48px;line-height:1}
+  .hist3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+  .hist3 .btn{min-height:60px;padding:6px 8px;font-size:18px;flex-direction:column;gap:2px}
+  .hist-open{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:64px;margin:0 0 14px;padding:10px 16px;border:3px solid var(--line);border-radius:16px;background:var(--card);font-size:20px;font-weight:800;text-align:left;color:inherit}
+  .hist-open small{display:block;font-size:16px;font-weight:500;color:var(--muted)}
+  .hist-open .go{font-size:30px;color:var(--muted)}
+  .dayh{display:flex;justify-content:space-between;gap:10px;margin:16px 0 8px;padding-bottom:4px;border-bottom:3px solid var(--line);font-size:20px;font-weight:800}
+  .dayh:first-of-type{margin-top:4px}
+  .dayh span{font-size:17px;font-weight:600;color:var(--muted)}
   .tile small{font-size:18px;font-weight:500;color:var(--muted)}
   .tile:active{background:var(--pri-bg);border-color:var(--pri)}
   .banner{width:100%;min-height:72px;margin-bottom:16px;border-radius:16px;padding:14px 18px;text-align:left;font-weight:700;font-size:20px;display:flex;justify-content:space-between;align-items:center;gap:12px}
@@ -249,7 +257,8 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Партии, по которым факт не введён, не изменятся. Если нашли партию, которой нет в списке, — сообщите руководителю.': "Fakt kiritilmagan partiyalar o'zgarmaydi. Ro'yxatda yo'q partiya topilsa — rahbarga xabar bering.",
   'По этому товару нет партий с остатком. Если товар есть на складе — оформите его через «Приход».': "Bu mahsulot bo'yicha qoldig'i bor partiya yo'q. Mahsulot omborda bo'lsa — «Kirim» orqali rasmiylashtiring.",
   // остатки и внимание
-  'Все': 'Hammasi', 'Показывать нулевые': "Nollarni ko'rsatish", 'Ничего не найдено': 'Hech narsa topilmadi',
+  'Все': 'Hammasi', 'История прихода': 'Kirim tarixi', 'История расхода': 'Chiqim tarixi', 'История выпуска': 'Ishlab chiqarish tarixi',
+  'История записей': 'Yozuvlar tarixi', 'что уже записано, по дням': "yozilganlar, kunlar bo'yicha", 'Все записи': 'Barcha yozuvlar', 'История': 'Tarix', '📋 История': '📋 Tarix', 'Показывать нулевые': "Nollarni ko'rsatish", 'Ничего не найдено': 'Hech narsa topilmadi',
   'Ничего не найдено. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.': "Hech narsa topilmadi. Qoldig'i yo'q mahsulotlarni ko'rish uchun «Nollarni ko'rsatish»ni bosing.",
   'Партий нет (упаковка или без номера)': "Partiya yo'q (qadoq yoki raqamsiz)", 'Проверки': 'Tekshiruvlar', 'Товары с проблемами': 'Muammoli mahsulotlar',
   'Таких партий нет': "Bunday partiyalar yo'q", 'Проблем нет': "Muammo yo'q", 'Руководитель': 'Rahbar', 'Показать последние записи': "Oxirgi yozuvlarni ko'rsatish",
@@ -293,6 +302,7 @@ const MISS_UZ = {'товар': 'mahsulot', 'номер партии': 'partiya r
   'загрузка': 'yuklama', 'вес после сублимации': "sublimatsiyadan keyingi og'irlik", 'факт хотя бы по одной партии': "kamida bitta partiya bo'yicha fakt"};
 const u = x => UNITS_UZ[x] || x, ty = x => TYPES_UZ[x] || x;
 const UZR = [
+  [/^(\d+) (запись|записи|записей)$/, (m, n) => n + ' ta yozuv'],
   [/^[\d\s ,.−+-]+\s(кг|шт|сум|г)( · [\d\s ,.−+-]+\s(кг|шт|сум|г))+$/, m => m.replace(/(кг|шт|сум|г)(?=$| ·)/g, x => u(x))],
   [/^Итого по партиям: ([\d\s ,.−-]+) (кг|шт|г)$/, (m, n, un) => "Partiyalar bo'yicha jami: " + n + ' ' + u(un)],
   [/^Итого факт \((\d+) из (\d+)\)$/, (m, a, b) => 'Fakt jami (' + a + ' / ' + b + ')'],
@@ -547,7 +557,7 @@ function go(scr, keep) {
   if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
   if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
-  if (scr === 'rec') { Object.assign(F, {list: null, sel: null, q: ''}); setTimeout(recLoad, 0); }
+  if (scr === 'rec') { Object.assign(F, {list: null, sel: null, q: '', sheet: F.sheet || ''}); setTimeout(recLoad, 0); }
   if (scr === 'stock') Object.assign(F, {q: '', g: ls('sklad_sg') || 'Все', all: false, open: {}, sec: JSON.parse(ls('sklad_sec') || '{}')});
   render(); window.scrollTo(0, 0);
 }
@@ -566,7 +576,7 @@ function topBar() {
   const home = SCR === 'home' || SCR === 'login' || SCR === 'err';
   if (TG) { home ? TG.BackButton.hide() : TG.BackButton.show(); }
   return `<div class="top">${home || TG ? '' : '<button class="back" data-a="back">← Назад</button>'}
-    <h1>${esc(TITLES[SCR] || '')}</h1><button class="lang" data-a="lang" aria-label="Til / Язык">${LANG === 'uz' ? 'RU' : 'UZ'}</button><div class="who${home ? '' : ' inner'}">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
+    <h1>${esc(SCR === 'rec' && F.sheet ? '📋 История' : TITLES[SCR] || '')}</h1><button class="lang" data-a="lang" aria-label="Til / Язык">${LANG === 'uz' ? 'RU' : 'UZ'}</button><div class="who${home ? '' : ' inner'}">${esc(S.who)}${!TG && S.who && SCR === 'home' ? '<br><button class="btn" style="min-height:40px;padding:2px 12px;font-size:15px;border-color:#fff;color:#fff;background:transparent" data-a="logout">Выйти</button>' : ''}</div></div>`;
 }
 function render() {
   const v = ({home: vHome, in: vIn, out: vOut, prod: vProd, stock: vStock, inv: vInv, rec: vRec, attn: vAttn, login: vLogin, err: vErr})[SCR];
@@ -743,8 +753,12 @@ function vHome() {
     ${t('stock', '📋', 'Остатки', 'что есть на складе')}
     ${t('inv', '🧮', 'Инвентаризация', 'пересчёт по факту')}
     ${t('rec', '📝', 'Мои записи', S.admin ? 'изменить или удалить (все)' : 'изменить или удалить')}
-  </div>` + '<div style="height:16px"></div>' + undo;
+  </div>` + `<div class="card" style="margin-top:16px"><div class="lbl">📋 <span>История записей</span></div><div class="hint" style="margin:0">что уже записано, по дням</div>
+    <div class="hist3"><button class="btn" data-a="hist:Приход"><span>📥</span><span>Приход</span></button><button class="btn" data-a="hist:Расход"><span>📤</span><span>Расход</span></button><button class="btn" data-a="hist:Выпуск"><span>🏭</span><span>Выпуск</span></button></div></div>` + undo;
 }
+// Кнопка истории вверху экранов «Приход», «Расход», «Выпуск»
+const HIST_T = {'Приход': 'История прихода', 'Расход': 'История расхода', 'Выпуск': 'История выпуска'};
+const histBtn = sheet => `<button class="hist-open" data-a="hist:${sheet}"><span><span>📋 </span><span>${HIST_T[sheet]}</span><small>что уже записано, по дням</small></span><span class="go">›</span></button>`;
 
 /* ================= ПРИХОД ================= */
 function suggestBatch(it, dateISO) {
@@ -757,7 +771,7 @@ function vIn() {
   const it = F.item, pack = isPack(it), V = vIn_valid();
   if (it && !pack && !F.bManual) F.batch = suggestBatch(it, F.date);
   const types = S.types.in.filter(t => t !== 'Начальный остаток' && t !== 'Излишек (инвентаризация)');
-  let n = 1, h = '<div class="grid2"><div>';
+  let n = 1, h = histBtn('Приход') + '<div class="grid2"><div>';
   h += card(n++, 'Тип прихода', chips('type', types, F.type), true);
   h += card(n++, 'Товар', picker('item', null), true, V.m.item);
   if (it && !pack) {
@@ -824,7 +838,7 @@ function vOutPack() {
 function vOut() {
   const it = F.item, pack = isPack(it);
   const types = S.types.out.filter(t => t !== 'Недостача (инвентаризация)').concat([PACK_OUT]);
-  let n = 1, h = '<div class="grid2"><div>';
+  let n = 1, h = histBtn('Расход') + '<div class="grid2"><div>';
   h += card(n++, 'Тип расхода', chips('type', types, F.type), true);
   if (F.type === PACK_OUT) return h + vOutPack();
   const V = vOut_valid();
@@ -894,7 +908,7 @@ function modeChips() {
   const c = (m, ic, t) => `<button class="chip mode ${F.mode === m ? 'on' : ''}" data-a="pmode:${m}"><span class="mi">${ic}</span>${t}</button>`;
   return `<div class="modes">${c('load', '⏳', 'Загрузка')}${c('unload', '✅', 'Выгрузка' + (n ? ' (' + n + ')' : ''))}${c('pack', '📦', 'Фасовка')}</div>`;
 }
-function vProd() { return modeChips() + (F.mode === 'unload' ? vUnload() : F.mode === 'pack' ? vPackForm() : vProdForm()); }
+function vProd() { return histBtn('Выпуск') + modeChips() + (F.mode === 'unload' ? vUnload() : F.mode === 'pack' ? vPackForm() : vProdForm()); }
 function vProdForm() {
   const it = F.item, raw = F.raw, V = vProd_valid(), load = F.mode === 'load';
   if (!F.bManual) F.batch = prodBatch();
@@ -1306,12 +1320,21 @@ function vRec() {
   if (L.err) return `<div class="msg bad">${esc(L.err)}</div><button class="btn wide" data-a="recreload">Обновить</button>`;
   if (F.sel != null) return vRecEdit(L.items[F.sel]);
   const q = (F.q || '').toLowerCase();
-  const items = L.items.map((x, i) => [x, i]).filter(([x]) => !q || (x.item + ' ' + x.f.batch + ' ' + x.who + ' ' + x.type).toLowerCase().includes(q));
+  const items = L.items.map((x, i) => [x, i]).filter(([x]) => (!F.sheet || x.sheet === F.sheet) && (!q || (x.item + ' ' + x.f.batch + ' ' + x.who + ' ' + x.type).toLowerCase().includes(q)));
   let h = `<div class="hint" style="margin:0 0 10px">${L.admin ? 'Все записи за ' + L.days + ' дней.' : 'Ваши записи за ' + L.days + ' дней. Более старые исправляет руководитель.'}
     Неверный товар — удалите запись и внесите заново.</div>
+    <div class="chips" style="margin-bottom:12px">${['', 'Приход', 'Расход', 'Выпуск'].map(x => `<button class="chip ${(F.sheet || '') === x ? 'on' : ''}" data-a="recsheet:${x}">${x ? (REC_IC[x] + ' ') : ''}<span>${x || 'Все записи'}</span></button>`).join('')}</div>
     <input class="txt" placeholder="Поиск: товар, партия${L.admin ? ', кто' : ''}" value="${esc(F.q || '')}" data-recq="1" autocomplete="off" style="margin-bottom:12px">`;
   if (!items.length) h += '<div class="card"><div class="hint">Записей нет.</div></div>';
-  items.slice(0, 80).forEach(([x, i]) => {
+  let lastDay = '';
+  const shown = items.slice(0, 120);
+  shown.forEach(([x, i]) => {
+    const day = String(x.at).slice(0, 10);
+    if (day !== lastDay) {   // заголовок дня: «Сегодня», «Вчера» или дата, и сколько записей
+      lastDay = day;
+      const cnt = shown.filter(([y]) => String(y.at).slice(0, 10) === day).length;
+      h += `<div class="dayh"><span style="color:inherit;font-size:inherit;font-weight:inherit">${day === ru(today()) ? 'Сегодня' : day === ru(daysAgo(1)) ? 'Вчера' : esc(day)}</span><span>${cnt} ${cnt % 10 === 1 && cnt % 100 !== 11 ? 'запись' : cnt % 10 >= 2 && cnt % 10 <= 4 && (cnt % 100 < 10 || cnt % 100 >= 20) ? 'записи' : 'записей'}</span></div>`;
+    }
     const unitless = x.sheet === 'Выпуск' ? ' ← ' + esc(x.raw) + ' ' + esc(x.f.rawQty) : '';
     h += `<div class="card"><div class="sub">${REC_IC[x.sheet] || ''} ${esc(x.sheet)} · ${esc(x.type)} · ${esc(x.at)}${L.admin ? ' · ' + esc(x.who) : ''}</div>
       <div class="nm" style="font-size:22px;font-weight:800;margin:6px 0">${esc(x.item)}</div>
@@ -1522,6 +1545,8 @@ const ACT = {
   unloadgo: () => { go('prod', {mode: 'unload'}); },
   recedit: i => { F.sel = +i; render(); window.scrollTo(0, 0); },
   recback: () => { F.sel = null; render(); },
+  hist: sh => go('rec', {sheet: sh}),
+  recsheet: sh => { F.sheet = sh; F.sel = null; render(); window.scrollTo(0, 0); },
   recsave: () => recSave(),
   recdel: i => recDel(+i),
   recreload: () => { F.list = null; render(); recLoad(); },
@@ -1618,7 +1643,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-25-mobile';
+const APP_VER = '2026-10-26-history';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
