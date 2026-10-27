@@ -998,7 +998,7 @@ function recipeFor(it) {
   const by = s => S.items.find(x => x.n.toLowerCase() === s.toLowerCase()) || null;
   if (g === '20' || g === '30') {
     if (flavor === 'микс (4вкуса)') return {main: by('Мороженое микс (4вкуса) кубики'), parts: ['Пломбир кубик', 'Шоколад кубик', 'Клубника кубик', 'Банан кубик'].map(by), names: ['Пломбир кубик', 'Шоколад кубик', 'Клубника кубик', 'Банан кубик']};
-    if (flavor === 'фруктовый микс') { const nm = ['Кубик вишня натуральная', 'Кубик малина натуральная', 'Кубик клубника натуральная', 'Кубик киви натуральная', 'Кубик апельсин натуральный']; return {main: null, even: true, parts: nm.map(by), names: nm}; }
+    if (flavor === 'фруктовый микс') { const nm = ['Мороженое кубик вишня натуральная', 'Мороженое кубик малина натуральная', 'Мороженое кубик клубника натуральная', 'Мороженое кубик киви натуральная', 'Мороженое кубик апельсин натуральный']; return {main: null, even: true, parts: nm.map(by), names: nm}; }
     const cube = S.items.find(x => x.g === 'Сублимат (кг)' && /кубик/i.test(x.n) && x.n.toLowerCase().includes(flavor));
     return cube ? {main: cube, parts: [], names: []} : null;
   }
@@ -1666,7 +1666,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-27-fruit-cubes';
+const APP_VER = '2026-10-27-fruit-cubes2';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
