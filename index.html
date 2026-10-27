@@ -984,8 +984,9 @@ function packData(it) {
 
 /* ----- Рецепты контейнеров: откуда брать сырьё (21.10.2026) -----
    20/30 г — только кубики: микс 4 вкуса — сначала «Мороженое микс (4вкуса) кубики», не хватает — поровну из кубиков
-            Пломбир, Шоколад, Клубника, Банан; фруктовый микс — «Кубик фруктовый микс», не хватает — поровну из кубиков
-            Апельсин, Киви, Вишня, Клубника натуральная, Малина; остальные — свой кубик.
+            Пломбир, Шоколад, Клубника, Банан; фруктовый микс (с 27.10.2026) — сразу поровну из 5 кубиков:
+            вишня, малина, клубника, киви, апельсин натуральные (кончился один — его долю берём поровну с остальных);
+            остальные — свой кубик.
    100 г   — только ОПТ: микс 4 вкуса — сначала ОПТ-микс, не хватает — поровну из ОПТ Пломбир, Шоколадное, Клубника, Банан;
             фруктовый микс — ОПТ Фруктовый микс, не хватает — поровну из ОПТ Апельсин, Киви, Вишня, Клубника натуральная, Малина; остальные — свой ОПТ.
    Сырья всего = вес 1 шт × количество (можно исправить). */
@@ -997,7 +998,7 @@ function recipeFor(it) {
   const by = s => S.items.find(x => x.n.toLowerCase() === s.toLowerCase()) || null;
   if (g === '20' || g === '30') {
     if (flavor === 'микс (4вкуса)') return {main: by('Мороженое микс (4вкуса) кубики'), parts: ['Пломбир кубик', 'Шоколад кубик', 'Клубника кубик', 'Банан кубик'].map(by), names: ['Пломбир кубик', 'Шоколад кубик', 'Клубника кубик', 'Банан кубик']};
-    if (flavor === 'фруктовый микс') { const nm = ['Апельсин кубик', 'Киви кубик', 'Вишня кубик', 'Клубника натуральная кубик', 'Малина кубик']; return {main: by('Кубик фруктовый микс'), parts: nm.map(by), names: nm}; }
+    if (flavor === 'фруктовый микс') { const nm = ['Кубик вишня натуральная', 'Кубик малина натуральная', 'Кубик клубника натуральная', 'Кубик киви натуральная', 'Кубик апельсин натуральный']; return {main: null, even: true, parts: nm.map(by), names: nm}; }
     const cube = S.items.find(x => x.g === 'Сублимат (кг)' && /кубик/i.test(x.n) && x.n.toLowerCase().includes(flavor));
     return cube ? {main: cube, parts: [], names: []} : null;
   }
@@ -1010,9 +1011,26 @@ function recipeFor(it) {
   }
   return null;
 }
+function evenSplit(parts, kg) {   // поровну; у кого не хватает — берём сколько есть, остальное поровну с других
+  const out = parts.map(p => ({it: p, q: 0})); let need = r3(kg), left = out.slice();
+  for (let g = 0; g < 10 && need > 1e-9 && left.length; g++) {
+    const each = Math.floor(need / left.length * 1000) / 1000, next = [];
+    left.forEach((x, i) => {
+      const room = Math.max(0, (stockQ(x.it.n) || 0) - x.q);
+      const want = i === left.length - 1 ? r3(need - each * (left.length - 1)) : each;
+      const take = r3(Math.min(want, room)); x.q = r3(x.q + take);
+      if (room - take > 1e-9) next.push(x);
+    });
+    need = r3(kg - out.reduce((a, x) => a + x.q, 0)); left = next;
+  }
+  if (need > 1e-9) out[0].q = r3(out[0].q + need);   // на складе не хватает всего — сервер покажет «не хватает»
+  return out.filter(x => x.q > 1e-9);
+}
 function recipeLines(it, kg) {   // [{it, q}] — сначала основная позиция, недостаток поровну из составляющих
-  const r = recipeFor(it); if (!r || !r.main || !(kg > 0)) return null;
+  const r = recipeFor(it); if (!r || !(kg > 0)) return null;
   const lines = [], missing = r.names.filter((x, i) => !r.parts[i]);
+  if (r.even) { const ps = r.parts.filter(Boolean); return ps.length ? {lines: evenSplit(ps, kg), missing, r} : null; }
+  if (!r.main) return null;
   if (!r.parts.length) return {lines: [{it: r.main, q: r3(kg)}], missing, r};
   const fromMain = Math.min(kg, Math.max(0, stockQ(r.main.n) || 0));
   if (fromMain > 1e-9) lines.push({it: r.main, q: r3(fromMain)});
@@ -1051,7 +1069,8 @@ function recipeCard(it, n) {
   if (!(num(F.qty) > 0)) return `<div class="msg info">Введите выше, сколько штук получили, — сырьё подставится само по рецепту (${it.w} г × шт).</div>`;
   const pl = F.recipe;
   return card(n, 'Сырья всего, кг (вес 1 шт × количество)', qbox('rawTotal', 'Сырья всего', 'кг', false) +
-    `<div class="hint">По рецепту: ${esc(r.main ? r.main.n : '—')}${r.parts.length ? ', если не хватает — поровну: ' + esc(r.names.join(', ')) : ''}. Ниже можно поправить вручную.</div>` +
+    (r.even ? `<div class="hint">${LANG === 'uz' ? "Retsept bo'yicha teng ulushda: " + esc(r.names.join(', ')) + ". Biri tugasa — uning ulushi qolganlaridan teng olinadi. Quyida qo'lda tuzatish mumkin." : 'По рецепту поровну: ' + esc(r.names.join(', ')) + '. Кончился один — его долю берём поровну с остальных. Ниже можно поправить вручную.'}</div>`
+     : `<div class="hint">По рецепту: ${esc(r.main ? r.main.n : '—')}${r.parts.length ? ', если не хватает — поровну: ' + esc(r.names.join(', ')) : ''}. Ниже можно поправить вручную.</div>`) +
     (pl && pl.missing.length ? `<div class="msg warn">Нет в справочнике: ${esc(pl.missing.join(', '))}</div>` : ''), true);
 }
 
@@ -1647,7 +1666,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-27-recipe-qty';
+const APP_VER = '2026-10-27-fruit-cubes';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
