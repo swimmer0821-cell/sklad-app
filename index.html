@@ -615,7 +615,8 @@ function drawPickRes(key) {
   const box = document.querySelector(`[data-res="${key}"]`); if (!box) return;
   const q = String(F['q_' + key] || '').toLowerCase().split(/\s+/).filter(Boolean), g = PICKG[key];
   if (!q.length) { box.innerHTML = ''; return; }
-  const res = S.items.map((it, i) => ({it, i})).filter(x => (!g || g.includes(x.it.g)) && q.every(w => x.it.n.toLowerCase().includes(w))).slice(0, 8);
+  const tight = s => s.replace(/\s+/g, '').replace(/ё/g, 'е');   // «(4вкуса)» = «(4 вкуса)», порядок слов любой
+  const res = S.items.map((it, i) => ({it, i})).filter(x => { if (g && !g.includes(x.it.g)) return false; const nm = x.it.n.toLowerCase(), nt = tight(nm); return q.every(w => nm.includes(w) || nt.includes(tight(w))); }).slice(0, 8);
   box.innerHTML = res.length ? res.map(x => `<button class="opt" data-a="pick:${key}:${x.i}"><div><div class="nm">${esc(x.it.n)}</div><div class="sub">${esc(x.it.g)}</div></div>
     <div class="q">${fmt(stockQ(x.it.n))} ${esc(x.it.u)}</div></button>`).join('') : '<div class="msg warn">Ничего не найдено.</div>';
   // нет нужной позиции — можно предложить новую (руководитель подтверждает)
@@ -1047,7 +1048,7 @@ function applyRecipe() {   // заполняет «Из чего» по реце
 function recipeCard(it, n) {
   const r = recipeFor(it); if (!r || !it.w) return '';
   if (F.mixManual) return `<div class="card"><div class="hint">«Из чего» заполнено вручную.</div><button class="btn wide" style="margin-top:10px" data-a="mixauto">↺ Заполнить по рецепту</button></div>`;
-  if (!(num(F.qty) > 0)) return `<div class="msg info">Введите, сколько штук получили, — сырьё подставится само по рецепту (${it.w} г × шт).</div>`;
+  if (!(num(F.qty) > 0)) return `<div class="msg info">Введите выше, сколько штук получили, — сырьё подставится само по рецепту (${it.w} г × шт).</div>`;
   const pl = F.recipe;
   return card(n, 'Сырья всего, кг (вес 1 шт × количество)', qbox('rawTotal', 'Сырья всего', 'кг', false) +
     `<div class="hint">По рецепту: ${esc(r.main ? r.main.n : '—')}${r.parts.length ? ', если не хватает — поровну: ' + esc(r.names.join(', ')) : ''}. Ниже можно поправить вручную.</div>` +
@@ -1066,7 +1067,10 @@ function vPackForm() {
   if (!F.bManual) F.batch = prodBatch();
   let n = 1, h = '<div class="grid2"><div>';
   h += card(n++, 'Что получится (штуки или ОПТ)', picker('item', PACK_PROD_G), true, V.m.item);
-  if (it) { const rc = recipeCard(it, n); if (rc) { h += rc; n++; } }
+  const qtyCard = () => card(n++, it.g === PACKED ? 'Сколько штук получили' : 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
+  const byRecipe = it && recipeFor(it) && it.w;   // по рецепту: сначала «сколько штук», потом сырьё подставится само
+  if (byRecipe) h += qtyCard();
+  if (it) { const rc = recipeCard(it, n); if (rc) { h += rc; if (!rc.startsWith('<div class="msg')) n++; } }
   xs.forEach(c => {
     let body = picker(c.pk, PACK_RAW_G);
     if (c.raw) {
@@ -1082,7 +1086,7 @@ function vPackForm() {
   if (F.raw && xs.length < MAX_COMPS) h += `<button class="btn wide" style="margin-bottom:16px" data-a="xadd">＋ Добавить ещё позицию (смесь, микс)</button>`;
   h += '</div><div>';
   if (many && V.total > 0) h += totalRow([{q: r3(V.total), u: xs[0].raw ? xs[0].raw.u : 'кг'}], 'Всего сырья');
-  if (it) h += card(n++, it.g === PACKED ? 'Сколько штук получили' : 'Сколько получили', qbox('qty', 'Получено: ' + it.n, it.u, unitInt(it.u)) + (V.check ? `<div class="msg ${V.checkBad ? 'warn' : 'ok'}">${esc(V.check)}</div>` : ''), true, V.m.qty);
+  if (it && !byRecipe) h += qtyCard();
   if (it && F.raw) h += card(n++, 'Партия продукта', F.batch
     ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div><div class="hint">${F.bManual ? 'Введена вручную.' : 'Совпадает с партией сырья — так сохраняется прослеживаемость.'}</div>`
     : '<button class="btn pri wide" data-a="editbatch">Ввести номер партии</button>', true, V.m.batch);
@@ -1643,7 +1647,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-26-history';
+const APP_VER = '2026-10-27-recipe-qty';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
