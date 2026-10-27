@@ -85,6 +85,9 @@ const CFG = {
   .tag{display:inline-block;font-size:15px;font-weight:800;padding:3px 9px;border-radius:8px;margin-right:6px}
   .tag.fefo{background:var(--ok-bg);color:var(--ok)} .tag.bad{background:var(--bad-bg);color:var(--bad)} .tag.warn{background:var(--warn-bg);color:var(--warn)}
   .sel{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .ph{width:56px;height:56px;flex:none;border-radius:10px;object-fit:cover;background:#fff;border:2px solid var(--line);cursor:zoom-in}
+  .ph.add{display:inline-flex;align-items:center;justify-content:center;font-size:22px;border-style:dashed;cursor:pointer}
+  .phbig{display:block;width:100%;max-height:60vh;object-fit:contain;border-radius:12px;background:#fff;margin-top:8px}
   .sel .nm{font-size:23px;font-weight:800}
   .sel .sub{font-size:17px;color:var(--muted)}
   input.search,input.txt,input.date{width:100%;min-height:66px;font-size:22px;padding:12px 16px;border:3px solid var(--pri);border-radius:14px;background:#fff;color:var(--text)}
@@ -404,6 +407,10 @@ Object.assign(UZ, {'Что получится (пачки или ОПТ)': "Nima
   'Всего сырья': 'Jami xomashyo', 'Сколько получили': 'Qancha olindi', 'Сколько пачек получили': 'Nechta qadoq olindi',
   'Сколько штук получили': 'Necha dona olindi', 'Что получится (штуки или ОПТ)': 'Nima chiqadi (dona yoki ULGURJI)', 'Сырья всего, кг (вес 1 шт × количество)': "Jami xomashyo, kg (1 dona og'irligi × soni)",
   '«Из чего» заполнено вручную.': "«Nimadan» qo'lda to'ldirilgan.", '↺ Заполнить по рецепту': "↺ Retsept bo'yicha to'ldirish"});
+Object.assign(UZ, {'Закрыть': 'Yopish', 'Убрать фото': "Rasmni olib tashlash", '📷 Заменить фото': "📷 Rasmni almashtirish", '📷 Добавить фото': "📷 Rasm qo'shish",
+  'Фото пока нет.': "Hozircha rasm yo'q.", 'Убрать фото у позиции?': 'Pozitsiya rasmini olib tashlaysizmi?', 'Убрать': 'Olib tashlash',
+  'Загружаю фото…': 'Rasm yuklanmoqda…', 'Убираю фото…': 'Rasm olib tashlanmoqda…', 'Не получилось прочитать фото.': "Rasmni o'qib bo'lmadi.",
+  'Фото меняет только руководитель.': "Rasmni faqat rahbar o'zgartiradi.", 'Фото слишком большое.': 'Rasm juda katta.'});
 UZR.push([/^Из чего — позиция (\d+)$/, (m, n) => 'Nimadan — ' + n + '-pozitsiya'], [/^Сырьё (\d+)$/, (m, n) => 'Xomashyo ' + n],
   [/^Выпуск · Фасовка \(смесь из (\d+)\)$/, (m, n) => 'Ishlab chiqarish · Qadoqlash (' + n + ' tadan aralashma)'], [/^Не хватает «(.+)»: доступно (.+)\.$/, (m, a, b) => '«' + a + '» yetarli emas: ' + b + ' mavjud.']);
 PHR_UZ.unshift(['Всего сырья:', 'Jami xomashyo:'], ['📦 Упаковка (списана автоматически):', '📦 Qadoq (avtomatik hisobdan chiqarildi):'], ['⚠ Упаковки не хватало:', "⚠ Qadoq yetmadi:"]);
@@ -602,7 +609,7 @@ function picker(key, groups) {
   PICKG[key] = groups;
   const it = F[key];
   if (it) {
-    return `<div class="sel"><div><div class="nm">${esc(it.n)}</div><div class="sub">${esc(it.g)} · на складе: <b>${fmt(stockQ(it.n))} ${esc(it.u)}</b></div></div>
+    return `<div class="sel"><div style="display:flex;align-items:center;gap:12px">${ph(it.n)}<div><div class="nm">${esc(it.n)}</div><div class="sub">${esc(it.g)} · на складе: <b>${fmt(stockQ(it.n))} ${esc(it.u)}</b></div></div></div>
       <button class="btn" data-a="unpick:${key}">Сменить</button></div>`;
   }
   const rec = (JSON.parse(ls('sklad_recent') || '[]')).map(itemBy).filter(i => i && (!groups || groups.includes(i.g))).slice(0, 8);
@@ -617,7 +624,7 @@ function drawPickRes(key) {
   if (!q.length) { box.innerHTML = ''; return; }
   const tight = s => s.replace(/\s+/g, '').replace(/ё/g, 'е');   // «(4вкуса)» = «(4 вкуса)», порядок слов любой
   const res = S.items.map((it, i) => ({it, i})).filter(x => { if (g && !g.includes(x.it.g)) return false; const nm = x.it.n.toLowerCase(), nt = tight(nm); return q.every(w => nm.includes(w) || nt.includes(tight(w))); }).slice(0, 8);
-  box.innerHTML = res.length ? res.map(x => `<button class="opt" data-a="pick:${key}:${x.i}"><div><div class="nm">${esc(x.it.n)}</div><div class="sub">${esc(x.it.g)}</div></div>
+  box.innerHTML = res.length ? res.map(x => `<button class="opt" data-a="pick:${key}:${x.i}">${ph(x.it.n)}<div style="flex:1"><div class="nm">${esc(x.it.n)}</div><div class="sub">${esc(x.it.g)}</div></div>
     <div class="q">${fmt(stockQ(x.it.n))} ${esc(x.it.u)}</div></button>`).join('') : '<div class="msg warn">Ничего не найдено.</div>';
   // нет нужной позиции — можно предложить новую (руководитель подтверждает)
   if (String(F['q_' + key] || '').trim().length >= 3)
@@ -1414,6 +1421,51 @@ async function recDel(i) {
 const G_ICON = {'Сырьё': '🥛', 'Сублимат (кг)': '❄️', 'ГП опт (кг)': '📦', 'ГП фасованная (шт)': '🛍', 'Упаковка': '🏷'};
 const SEC_ORDER = ['Контейнеры', 'Банки', '150 г', 'Шоу-боксы', 'Мороженое', 'Йогурт', 'Фрукты', 'Сулугуни и курт', 'Сулугуни', 'Курт',
   'Молочное', 'Добавки', 'Тара и банки', 'Этикетки', 'Пакеты и плёнка', 'Стики', 'Гофра и коробки', 'Прочее', ''];
+/* ----- фото позиций (с 27.10.2026): картинка слева от названия; добавляет и меняет только руководитель ----- */
+const PHN = [], PHI = {};
+const phKey = n => { if (!(n in PHI)) { PHI[n] = PHN.length; PHN.push(n); } return PHI[n]; };
+function ph(n) {
+  const u = (S.photos || {})[n], k = phKey(n);
+  if (u) return `<img class="ph" src="${esc(u)}" alt="" loading="lazy" data-a="phv:${k}" onerror="this.style.visibility='hidden'">`;
+  return S.admin && S.photoOn ? `<span class="ph add" data-a="phv:${k}">📷</span>` : '';   // 📷 — только когда сервер умеет фото
+}
+async function phView(k) {
+  const n = PHN[+k]; if (!n) return;
+  const u = (S.photos || {})[n], btns = [{t: 'Закрыть', v: ''}];
+  if (S.admin) { if (u) btns.push({t: 'Убрать фото', v: 'del'}); btns.push({t: u ? '📷 Заменить фото' : '📷 Добавить фото', cls: 'pri', v: 'set'}); }
+  const v = await dialog(`<h3>${esc(n)}</h3>` + (u ? `<img class="phbig" src="${esc(u)}" alt="">` : '<div class="msg info">Фото пока нет.</div>'), btns);
+  if (v === 'set') phPick(n);
+  else if (v === 'del' && await ask('Убрать фото у позиции?', 'Убрать', 'Нет')) phSave(n, '');
+}
+function phPick(n) {   // камера или галерея телефона
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    let img; try { img = await phShrink(f); } catch (e) { dialog('<div class="msg bad">Не получилось прочитать фото.</div>', [{t: 'Понятно', cls: 'pri', v: 1}]); return; }
+    phSave(n, img);
+  };
+  inp.click();
+}
+function phShrink(file) {   // до 1000 px по большей стороне, JPEG — быстро грузится и мало весит
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1000 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
+    img.src = url;
+  });
+}
+async function phSave(n, image) {
+  try {
+    const j = await call(image ? 'photo_set' : 'photo_del', {name: n, image: image || ''}, {write: true, msg: image ? 'Загружаю фото…' : 'Убираю фото…'});
+    S.photos = j.photos || S.photos; render();
+  } catch (e) { if (e.kind !== 'auth') dialog(`<div class="big-bad">Не сохранено</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); }
+}
+
 function stockSec(s) {   // → [раздел, подраздел]
   const n = ' ' + s.n.toLowerCase() + ' ', has = (...w) => w.some(x => n.includes(x));
   const fruit = has('ананас', 'клубник', 'яблок', 'банан', 'вишн') && !has('мороженое');
@@ -1437,7 +1489,7 @@ function vStock() {
 function stockRow(s, i) {
   const st = s.st && s.st !== 'ок' ? `<span class="tag ${s.st.includes('⛔') ? 'bad' : s.st.includes('⚠') ? 'warn' : ''}">${esc(s.st)}</span>` : '';
   const open = F.open[i];
-  return `<button class="opt" data-a="sopen:${i}" style="flex-wrap:wrap"><div style="flex:1"><div class="nm">${esc(s.n)}</div>
+  return `<button class="opt" data-a="sopen:${i}" style="flex-wrap:wrap">${ph(s.n)}<div style="flex:1"><div class="nm">${esc(s.n)}</div>
     <div class="sub">${s.exp ? 'ближайший срок: ' + esc(s.exp) + ' ' : ''}${st}</div></div><div class="q">${fmt(s.q)} ${esc(s.u)}</div>
     ${open ? `<div style="width:100%;margin-top:10px;font-size:18px">${open === 'load' ? 'Загрузка партий…' : open.length ? open.map((b, k) =>
       `<div style="padding:6px 0;border-top:1px dashed #c9ced8">${k === 0 ? '<span class="tag fefo">★</span>' : ''}Партия <b>${esc(b.b || '—')}</b>: ${fmt(b.q)} ${esc(s.u)} · до ${esc(b.exp || '—')}${b.d != null && b.d <= CFG.EXPIRY_WARN_DAYS ? ' <span class="tag bad">' + (b.d < 0 ? 'просрочена' : b.d + ' дн') + '</span>' : ''}</div>`).join('') + (open.length > 1 ? `<div style="padding:6px 0;border-top:2px solid #c9ced8;font-weight:800">Итого по партиям: ${fmt(r3(open.reduce((t, b) => t + (b.q || 0), 0)))} ${esc(s.u)}</div>` : '') : 'Партий нет (упаковка или без номера)'}</div>` : ''}
@@ -1629,6 +1681,7 @@ const ACT = {
     try { const j = await call('item_decide', {row: p.row, ok: false}, {write: true, msg: 'Записываю…'}); F.pend = j.items; render(); }
     catch (e) { if (e.kind !== 'auth') { F.pend = undefined; render(); dialog(`<div class="big-bad">Не сохранено</div><div class="msg bad">${esc(e.message)}</div>`, [{t: 'Понятно', cls: 'pri', v: 1}]); } }
   },
+  phv: k => phView(k),
   retry: () => start(),
   lang: () => setLang(LANG === 'uz' ? 'ru' : 'uz')
 };
@@ -1655,7 +1708,7 @@ document.addEventListener('change', e => {
 /* ================= ЗАПУСК ================= */
 function apply(d) {
   Object.assign(S, {who: d.who, admin: d.admin, items: d.items, stock: d.stock, checks: d.checks, expiry: d.expiry,
-    loads: d.loads || [], lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups});
+    loads: d.loads || [], photos: d.photos || {}, photoOn: !!d.photos, lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups});
 }
 async function refreshQuiet() { try { apply((await api('init', {})).data); if (SCR === 'home' || SCR === 'attn') render(); } catch (e) {} }
 async function start() {
@@ -1666,7 +1719,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-27-mix4-cubes';
+const APP_VER = '2026-10-27-photos';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
