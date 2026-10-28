@@ -156,7 +156,8 @@ const CFG = {
 /* ---------------- служебное ---------------- */
 const TG = (window.Telegram && Telegram.WebApp && Telegram.WebApp.initData) ? Telegram.WebApp : null;
 const REASON_REQ = ['Брак', 'Потеря/усушка', 'Списание (срок)', 'Недостача (инвентаризация)'];
-const SELL = ['Отгрузка дистрибьютору', 'Продажа', 'Маркетплейс', 'Образец/промо'];
+const SELL = ['Отгрузка дистрибьютору', 'Продажа', 'Маркетплейс', 'Образец/промо', 'Выдано агенту'];
+const VAN_OUT = 'Выдано агенту', VAN_IN = 'Возврат от агента';   // машина торгового агента (с 29.10.2026)
 // Кнопка «Фасовка» в Расходе: списание упаковки, потраченной на фасовку.
 // В таблицу пишется тип «Прочее» и причина «Фасовка: <продукт>» — сервер менять не нужно.
 const PACK_OUT = '📦 Фасовка (упаковка)', FP_G = ['ГП фасованная (шт)', 'ГП опт (кг)'];   // «Что фасовали»: пачки и мороженое ОПТ в пакетах
@@ -201,7 +202,7 @@ let LANG = (function () {
   return 'ru';
 })();
 const TYPES_UZ = {
-  'Закупка': 'Xarid', 'Начальный остаток': "Boshlang'ich qoldiq", 'Возврат от клиента': 'Mijozdan qaytarish',
+  'Закупка': 'Xarid', 'Начальный остаток': "Boshlang'ich qoldiq", 'Возврат от клиента': 'Mijozdan qaytarish', 'Возврат от агента': 'Agentdan qaytarish', 'Выдано агенту': 'Agentga berildi',
   'Излишек (инвентаризация)': 'Ortiqcha (inventarizatsiya)', 'Прочее': 'Boshqa',
   'Отгрузка дистрибьютору': "Distribyutorga jo'natish", 'Продажа': 'Sotuv', 'Маркетплейс': 'Marketpleys',
   'Образец/промо': 'Namuna/promo', 'Брак': 'Brak', 'Потеря/усушка': "Yo'qotish/qurish",
@@ -241,6 +242,8 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Другой…': 'Boshqa…', 'Не указывать': "Ko'rsatmaslik", 'Цена за единицу': 'Birlik narxi', 'Номер партии ': 'Partiya raqami',
   'Как на этикетке или в накладной, например С-4': "Yorliq yoki yuk xatidagidek, masalan С-4",
   // расход
+  'Агент': 'Agent', 'агент': 'agent', 'Агент (в машину)': 'Agent (mashinaga)',
+  'Агентов нет. Руководитель добавляет агентов в приложении «Агент LAZA».': "Agentlar yo'q. Rahbar agentlarni «Agent LAZA» ilovasida qo'shadi.",
   'Тип расхода': 'Chiqim turi', 'Партия': 'Partiya', 'Доступно:': 'Mavjud:', 'Причина': 'Sabab', 'Кому': 'Kimga', 'Кому / причина': 'Kimga / sabab',
   'Другое…': 'Boshqa…', 'Ввести…': 'Kiritish…', '📦 Фасовка (упаковка)': '📦 Qadoqlash (qadoq)', 'Что фасовали': 'Nimani qadoqladik',
   'Списываем пакеты, этикетки, плёнку, коробки, потраченные на фасовку. Если для продукта заполнены «Нормы», упаковка уже списывается сама при «Выпуск → Фасовка» — тогда здесь записывайте только лишнюю или испорченную.': "Qadoqlashga sarflangan paket, yorliq, plyonka, qutilarni hisobdan chiqaramiz. Mahsulot uchun «Нормы» to'ldirilgan bo'lsa, qadoq «Ishlab chiqarish → Qadoqlash»da o'zi chiqariladi — bu yerda faqat ortiqcha yoki buzilganini yozing.",
@@ -800,9 +803,13 @@ function vIn() {
   }
   h += '</div><div>';
   h += card(n++, 'Количество', it ? qbox('qty', 'Количество: ' + it.n, it.u, unitInt(it.u)) : '<div class="hint">Сначала выберите товар.</div>', true, V.m.qty);
+  if (F.type === VAN_IN) {   // возврат от агента — только агент из списка «Агент LAZA»
+    h += card(n++, 'Агент', (S.agents || []).length ? chips('from', S.agents, F.from) : '<div class="msg warn">Агентов нет. Руководитель добавляет агентов в приложении «Агент LAZA».</div>', true, V.m.from);
+  } else {
   const fromList = S.recent.from || [], other = F.from && !fromList.includes(F.from);
   h += card(n++, 'Откуда / поставщик', chips('from', fromList, F.from,
     `<button class="chip ${other ? 'on' : ''}" data-a="otherfrom">${other ? esc(F.from) : 'Другой…'}</button>${F.from ? '<button class="chip" data-a="clr:from">✕ Не указывать</button>' : ''}`), false);
+  }
   h += card(n++, 'Цена за единицу без НДС', qbox('price', 'Цена за 1 ' + (it ? it.u : 'ед.') + ' без НДС', 'сум', true) +
     (F.price && F.qty ? `<div class="msg info">Сумма без НДС: ${fmt(Math.round(num(F.price) * num(F.qty)))} сум${F.pay === 'Перечисление' ? `<br>К оплате с НДС 12%: <b>${fmt(Math.round(num(F.price) * num(F.qty) * 1.12))} сум</b>` : ''}</div>` : ''), false);
   // оплата закупки (с 23.10.2026): наличные — без НДС, перечисление — с НДС 12%
@@ -821,6 +828,7 @@ function vIn_valid() {
   const auto = it && !pack ? expAuto(it, F.date) : '';
   if (it && !pack && !auto && !F.exp) { m.exp = 1; miss.push('годен до'); }
   if (F.price && !F.pay) { m.pay = 1; miss.push('оплата'); }
+  if (F.type === VAN_IN && !(S.agents || []).includes(F.from)) { m.from = 1; miss.push('агент'); }
   if (it && !pack && F.exp && F.date && F.exp < F.date) block.push('«Годен до» раньше даты производства.');
   if (it && !pack && (F.exp || auto) && (F.exp || auto) < today()) warn.push('Партия уже просрочена (годен до ' + ru(F.exp || auto) + '). Проверьте даты.');
   const sum = it ? [['Операция', 'Приход · ' + F.type], ['Товар', it.n], ...(pack ? [] : [['Партия', F.batch], ['Дата производства', ru(F.date)], ['Годен до', F.exp ? ru(F.exp) : auto ? ru(auto) + ' (по Справочнику)' : '—']]),
@@ -860,6 +868,11 @@ function vOut() {
       (V.over ? `<div class="msg bad">⛔ Столько нет. Доступно только ${fmt(av)} ${esc(it.u)}.${F.sel !== 'auto' && F.bs && F.bs.length > 1 && num(F.qty) <= available(it, F.bs, 'auto') ? ' Выберите «Из нескольких партий».' : ''}</div>` : '') +
       (F.sel === 'auto' && num(F.qty) > 0 && !V.over && F.bs && F.bs.length ? `<div class="msg info">Спишется: ${esc(allocText(F.bs, num(F.qty)))}</div>` : ''), true, V.m.qty);
   }
+  if (F.type === VAN_OUT) {   // загрузка машины агента — только агент из списка «Агент LAZA»
+    h += card(n++, 'Агент', (S.agents || []).length ? chips('reason', S.agents, F.reason) : '<div class="msg warn">Агентов нет. Руководитель добавляет агентов в приложении «Агент LAZA».</div>', true, V.m.reason);
+    h += '</div></div>';
+    return h + foot(V);
+  }
   const req = REASON_REQ.includes(F.type), list = (S.recent.to || {})[F.type] || [], other = F.reason && !list.includes(F.reason);
   h += card(n++, req ? 'Причина' : (SELL.includes(F.type) ? 'Кому' : 'Кому / причина'), chips('reason', list, F.reason,
     `<button class="chip ${other ? 'on' : ''}" data-a="otherreason">${other ? esc(F.reason) : (list.length ? 'Другое…' : 'Ввести…')}</button>`) +
@@ -891,12 +904,13 @@ function vOut_valid() {
   const av = available(it, F.bs, F.sel), over = it && q > 0 && av != null && q > av + 1e-9;
   if (over) block.push('Количество больше остатка.');
   if (REASON_REQ.includes(F.type) && !F.reason) { m.reason = 1; miss.push('причина'); }
+  if (F.type === VAN_OUT && !(S.agents || []).includes(F.reason)) { m.reason = 1; miss.push('агент'); }
   const b = !it || pack || !F.bs || !F.bs.length ? null : F.sel === 'auto' ? null : F.bs[F.sel];
   if (b && b.d != null && b.d < 0 && SELL.includes(F.type)) block.push('Партия ' + b.b + ' просрочена — продавать нельзя. Оформите «Списание (срок)».');
   if (typeof F.sel === 'number' && F.sel > 0 && F.bs && F.bs[0]) warn.push('Не по сроку (FEFO): есть партия ' + F.bs[0].b + ' до ' + F.bs[0].exp);
   const bTxt = pack ? '—' : (F.sel === 'auto' && F.bs ? allocText(F.bs, q || 0) : (b ? b.b + ' (до ' + b.exp + ')' : '—'));
   const sum = it ? [['Операция', 'Расход · ' + F.type], ['Товар', it.n], ['Партия', bTxt], ['Количество', fmt(q) + ' ' + it.u],
-    [REASON_REQ.includes(F.type) ? 'Причина' : 'Кому / причина', F.reason || '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]] : [];
+    [REASON_REQ.includes(F.type) ? 'Причина' : F.type === VAN_OUT ? 'Агент (в машину)' : 'Кому / причина', F.reason || '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]] : [];
   return {m, miss, block, warn, sum, over, action: 'out',
     data: it ? {type: F.type, item: it.n, qty: F.qty, reason: F.reason, batch: pack || F.sel === 'auto' || !b ? '' : b.b} : null};
 }
@@ -1708,7 +1722,7 @@ document.addEventListener('change', e => {
 /* ================= ЗАПУСК ================= */
 function apply(d) {
   Object.assign(S, {who: d.who, admin: d.admin, items: d.items, stock: d.stock, checks: d.checks, expiry: d.expiry,
-    loads: d.loads || [], photos: d.photos || {}, photoOn: !!d.photos, lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups});
+    loads: d.loads || [], photos: d.photos || {}, photoOn: !!d.photos, lastBatch: d.lastBatch || {}, recent: d.recent || {from: [], to: {}}, types: d.types, groups: d.groups, agents: d.agents || []});
 }
 async function refreshQuiet() { try { apply((await api('init', {})).data); if (SCR === 'home' || SCR === 'attn') render(); } catch (e) {} }
 async function start() {
@@ -1719,7 +1733,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-27-kurt-cont';
+const APP_VER = '2026-10-29-van';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
