@@ -12,7 +12,7 @@ ol{font-size:17px;line-height:1.6}</style></head><body>
 <li>Сохранить (💾). Ошибок быть не должно.</li>
 <li>Начать развертывание → Управление развертываниями → ✏ → Новая версия → Развернуть.</li>
 <li>Откройте <a href="cost.html">приложение «Себестоимость»</a> и придумайте ПИН владельца.</li></ol>
-<p>Строк в коде: 368. Последняя строка: <code>}</code></p>
+<p>Строк в коде: 439. Последняя строка: <code>}</code></p>
 <textarea id="t" readonly>/**
  * СЕБЕСТОИМОСТЬ ПАРТИЙ — только для владельца
  * --------------------------------------------------------------
@@ -364,6 +364,8 @@ function costWrite_(rows) {
 
 // ---------- данные для приложения ----------
 function costData_() {
+  let pay = null;
+  try { pay = costAutoOvh_(); } catch (e) { pay = {error: e.message}; }
   const c = costRecalc_();
   const sh = costSheet_(COST_SH.PAR), params = costRows_(sh).map(r =&gt; ({
     s: String(r[0]), n: String(r[1]), v: r[2] === &#x27;&#x27; ? &#x27;&#x27; : r[2], u: String(r[3]), c: String(r[4])
@@ -377,9 +379,79 @@ function costData_() {
     })),
     sum: {ovhMonth: c.ovhMonth, planKg: c.planKg, ovhPlan: c.ovhPlan, monthKg: c.monthKg[mk] || 0,
           ovhFact: c.monthKg[mk] &gt; 0 ? c.ovhMonth / c.monthKg[mk] : null},
+    pay: pay,
     updated: Utilities.formatDate(now, tz, &#x27;dd.MM.yyyy HH:mm&#x27;)
   };
 }
+
+
+// ---------- накладные из приложений «Зарплата» и «Деньги» (с 04.11.2026) ----------
+// Зарплата берётся за последний месяц в «Зарплате»: затраты = на руки + налоги 24% с официального начисления.
+// Чтобы не считать дважды: Мафтуна идёт в «Питание сотрудников», маркетинг (Илья) — в «Маркетинг»,
+// логистика (водитель) — в «Логистика»; остальные — в «Зарплата». К маркетингу и логистике
+// добавляются расходы этого же месяца из «Деньги» (без выдач зарплаты «zp-…» и без отменённых).
+const COST_PAY_SS = &#x27;1gdzKFtdXA8c0h-sj1NUD9bJrfjE7qbkuGe49gB2SD4Y&#x27;;   // таблица «Зарплата SUB PROFI»
+const COST_MONEY_SS = &#x27;18mgpXfwxlSQjfXNWjlOHpLGu_0Or5V9Z1ynmxXtFwVM&#x27;; // таблица «Учёт денег SUB PROFI»
+const COST_FOOD_NAME = &#x27;Гафурова Мафтуна&#x27;;
+const COST_AUTO = {
+  pay: &#x27;Зарплата (с НДФЛ, соцналогом и наличными)&#x27;, food: &#x27;Питание сотрудников&#x27;,
+  mkt: &#x27;Маркетинг&#x27;, log: &#x27;Логистика&#x27;
+};
+const COST_MONEY_CAT = {mkt: &#x27;Реклама и продвижение&#x27;, log: &#x27;Транспорт и логистика&#x27;};
+const COST_GROUPS = [&#x27;Операторы и механики&#x27;, &#x27;Производственный персонал&#x27;, &#x27;Администрация&#x27;, &#x27;Логистика&#x27;, &#x27;Маркетинг&#x27;];
+
+function costAutoOvh_() {
+  const ps = SpreadsheetApp.openById(COST_PAY_SS);
+  const emp = ps.getSheetByName(&#x27;Сотрудники&#x27;).getDataRange().getValues().slice(1);
+  const E = {}; emp.forEach(r =&gt; { if (r[0]) E[String(r[0])] = {name: String(r[1]).trim(), cat: COST_GROUPS.indexOf(String(r[10]).trim()) &gt;= 0 ? String(r[10]).trim() : &#x27;Производственный персонал&#x27;}; });
+  const rows = ps.getSheetByName(&#x27;Ведомость&#x27;).getDataRange().getValues().slice(1).filter(r =&gt; r[0] &amp;&amp; r[1]);
+  const mon = r =&gt; r[0] instanceof Date ? Utilities.formatDate(r[0], &#x27;Asia/Tashkent&#x27;, &#x27;yyyy-MM&#x27;) : String(r[0]).trim();
+  const months = rows.map(mon).filter(m =&gt; /^\d{4}-\d{2}$/.test(m)).sort();
+  if (!months.length) throw new Error(&#x27;В «Зарплате» нет ни одного месяца.&#x27;);
+  const month = months[months.length - 1];
+  const G = {}; COST_GROUPS.forEach(c =&gt; G[c] = {cat: c, people: 0, cost: 0});
+  let food = 0, foodName = &#x27;&#x27;, all = 0;
+  rows.filter(r =&gt; mon(r) === month).forEach(r =&gt; {
+    const e = E[String(r[1])] || {name: String(r[2]), cat: &#x27;Производственный персонал&#x27;};
+    const full = Number(r[6]) || 0, gross = Number(r[11]) || 0;
+    const cost = full + Math.round(gross * 0.12) + Math.round(gross * 0.12);
+    all += cost;
+    if (e.name === COST_FOOD_NAME) { food += cost; foodName = e.name; return; }
+    G[e.cat].people++; G[e.cat].cost += cost;
+  });
+  // «Деньги»: расходы месяца по статьям маркетинга и логистики
+  const ops = SpreadsheetApp.openById(COST_MONEY_SS).getSheetByName(&#x27;Операции&#x27;).getDataRange().getValues().slice(1);
+  const money = {mkt: 0, log: 0};
+  ops.forEach(r =&gt; {
+    if (String(r[2]) !== &#x27;Расход&#x27; || String(r[11]) === &#x27;Отменена&#x27; || String(r[0]).indexOf(&#x27;zp-&#x27;) === 0) return;
+    const d = r[1] instanceof Date ? Utilities.formatDate(r[1], &#x27;Asia/Tashkent&#x27;, &#x27;yyyy-MM&#x27;) : String(r[1]).slice(0, 7);
+    if (d !== month) return;
+    const cat = String(r[3]).trim(), sum = Number(r[5]) || 0;
+    if (cat === COST_MONEY_CAT.mkt) money.mkt += sum;
+    if (cat === COST_MONEY_CAT.log) money.log += sum;
+  });
+  const payMain = G[&#x27;Операторы и механики&#x27;].cost + G[&#x27;Производственный персонал&#x27;].cost + G[&#x27;Администрация&#x27;].cost;
+  const mName = [&#x27;январь&#x27;,&#x27;февраль&#x27;,&#x27;март&#x27;,&#x27;апрель&#x27;,&#x27;май&#x27;,&#x27;июнь&#x27;,&#x27;июль&#x27;,&#x27;август&#x27;,&#x27;сентябрь&#x27;,&#x27;октябрь&#x27;,&#x27;ноябрь&#x27;,&#x27;декабрь&#x27;][Number(month.slice(5)) - 1] + &#x27; &#x27; + month.slice(0, 4);
+  const fm = n =&gt; String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, &#x27; &#x27;);
+  const vals = {};
+  vals[COST_AUTO.pay] = [payMain, &#x27;авто: «Зарплата», &#x27; + mName + &#x27; — операторы и механики, цех, администрация (на руки + налоги 24%)&#x27;];
+  vals[COST_AUTO.food] = [food, &#x27;авто: (карта Мафтуна) «Зарплата», &#x27; + mName + &#x27;, с налогами&#x27;];
+  vals[COST_AUTO.mkt] = [G[&#x27;Маркетинг&#x27;].cost + money.mkt, &#x27;авто: зарплата маркетинга &#x27; + fm(G[&#x27;Маркетинг&#x27;].cost) + &#x27; + «Деньги» &#x27; + fm(money.mkt) + &#x27;, &#x27; + mName];
+  vals[COST_AUTO.log] = [G[&#x27;Логистика&#x27;].cost + money.log, &#x27;авто: зарплата водителя &#x27; + fm(G[&#x27;Логистика&#x27;].cost) + &#x27; + «Деньги» &#x27; + fm(money.log) + &#x27;, &#x27; + mName];
+  const sh = costSyncParams_(), R = costRows_(sh);
+  R.forEach((r, i) =&gt; {
+    if (String(r[0]) !== COST_SEC.OVH || !vals[String(r[1])]) return;
+    const v = vals[String(r[1])];
+    if (r[2] !== v[0]) sh.getRange(i + 2, 3).setValue(v[0]);
+    if (String(r[4]) !== v[1]) sh.getRange(i + 2, 5).setValue(v[1]);
+  });
+  SpreadsheetApp.flush();
+  return {month: month, monthName: mName, groups: COST_GROUPS.map(c =&gt; G[c]), food: food, foodName: foodName,
+          payMain: payMain, payAll: all, prod: G[&#x27;Операторы и механики&#x27;].cost + G[&#x27;Производственный персонал&#x27;].cost,
+          money: money};
+}
+// Проверка из редактора: выполнить и посмотреть журнал.
+function costAutoTest() { Logger.log(JSON.stringify(costAutoOvh_())); }
 </textarea>
 <script>
 const b=document.getElementById('b'),t=document.getElementById('t'),st=document.getElementById('st');
