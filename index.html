@@ -216,7 +216,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Склад SUB PROFI': 'SUB PROFI ombori', 'Приход': 'Kirim', 'Расход': 'Chiqim', 'Выпуск': 'Ishlab chiqarish', 'Остатки': 'Qoldiq',
   'Инвентаризация': 'Inventarizatsiya', 'Внимание': 'Diqqat', 'закупка, возврат': 'xarid, qaytarish',
   'отгрузка, брак, списание': "jo'natish, brak, hisobdan chiqarish", 'загрузка, выгрузка, фасовка': 'yuklash, tushirish, qadoqlash',
-  'что есть на складе': 'omborda nima bor', 'пересчёт по факту': 'haqiqiy sanoq',
+  'что есть на складе': 'omborda nima bor', 'пересчёт по факту': 'haqiqiy sanoq', 'Себестоимость': 'Tannarx', 'накладные, зарплата, цена 1 кг': 'ustama xarajatlar, ish haqi, 1 kg narxi',
   'Открыть →': 'Ochish →', 'Проблем не найдено': 'Muammo topilmadi', 'Сроки и проверки →': 'Muddatlar va tekshiruvlar →', 'Выгрузить →': 'Tushirish →',
   // общие
   'обязательно': 'majburiy', '(можно не заполнять)': '(ixtiyoriy)', 'Нажмите, чтобы ввести': 'Kiritish uchun bosing',
@@ -764,6 +764,7 @@ function vHome() {
     ${t('stock', '📋', 'Остатки', 'что есть на складе')}
     ${t('inv', '🧮', 'Инвентаризация', 'пересчёт по факту')}
     ${t('rec', '📝', 'Мои записи', S.admin ? 'изменить или удалить (все)' : 'изменить или удалить')}
+    ${S.admin ? `<a class="tile" href="cost.html" style="text-decoration:none;color:inherit"><span class="ic">💰</span>Себестоимость<small>накладные, зарплата, цена 1 кг</small></a>` : ''}
   </div>` + `<div class="card" style="margin-top:16px"><div class="lbl">📋 <span>История записей</span></div><div class="hint" style="margin:0">что уже записано, по дням</div>
     <div class="hist3"><button class="btn" data-a="hist:Приход"><span>📥</span><span>Приход</span></button><button class="btn" data-a="hist:Расход"><span>📤</span><span>Расход</span></button><button class="btn" data-a="hist:Выпуск"><span>🏭</span><span>Выпуск</span></button></div></div>` + undo;
 }
@@ -1733,7 +1734,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-10-29-van';
+const APP_VER = '2026-11-04-cost';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
