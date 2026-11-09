@@ -127,7 +127,12 @@ function costLogin_(d) {
     const staff = [costProps_().getProperty(&#x27;PIN&#x27;), costProps_().getProperty(&#x27;ADMIN_PIN&#x27;)].map(x =&gt; String(x || &#x27;&#x27;).trim());
     if (staff.indexOf(pin) &gt;= 0) return {ok: false, error: &#x27;Этот ПИН уже используют сотрудники. Придумайте другой.&#x27;};
     costProps_().setProperty(&#x27;OWNER_PIN&#x27;, pin);
-  } else if (pin !== P) { Utilities.sleep(1500); return {ok: false, error: &#x27;Неверный ПИН-код.&#x27;}; }
+  } else {
+    // защита от подбора (09.11.2026): pinLocked_/pinFail_/pinPass_ — в файле «НовыеПозиции»
+    const lk = pinLocked_(&#x27;cost&#x27;); if (lk) return {ok: false, error: lk};
+    if (pin !== P) { pinFail_(&#x27;cost&#x27;); Utilities.sleep(1500); return {ok: false, error: &#x27;Неверный ПИН-код.&#x27;}; }
+    pinPass_(&#x27;cost&#x27;);
+  }
   const tok = Utilities.getUuid().replace(/-/g, &#x27;&#x27;) + Utilities.getUuid().replace(/-/g, &#x27;&#x27;);
   const T = costTokens_(); T[tok] = Date.now(); costSaveTokens_(T);
   return {ok: true, ctoken: tok};
