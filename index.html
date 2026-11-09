@@ -962,9 +962,9 @@ function packRule(it) {
   if (it.g === 'ГП опт (кг)') return {opt: true};
   if (it.g !== PACKED) return null;
   const cont = n.includes('контейнер');
-  if ((cont && g === '20') || /^курт 30 г$/.test(n)) return {tara: 'Тара Курт 80–100 мл', filmPer: 4, boxPer: 36};
-  if (/^сулугуни 50 г$/.test(n)) return {tara: 'Тара Сулугуни/Geladinho 150–180 мл', filmPer: 4, boxPer: 24};   // 24 шт в коробке
-  if (cont && g === '30') return {tara: 'Тара Сулугуни/Geladinho 150–180 мл', filmPer: 4, boxPer: 36};
+  if ((cont && g === '20') || /^курт 30 г$/.test(n)) return {tara: 'Тара 80–100 мл (курт, мороженое 20 г)', filmPer: 4, boxPer: 36};
+  if (/^сулугуни 50 г$/.test(n)) return {tara: 'Тара 150–180 мл (сулугуни 50 г, мороженое 30 г)', filmPer: 4, boxPer: 24};   // 24 шт в коробке
+  if (cont && g === '30') return {tara: 'Тара 150–180 мл (сулугуни 50 г, мороженое 30 г)', filmPer: 4, boxPer: 36};
   if (cont && g === '100') return {tara: /сникерс|ммденс/.test(n) ? 'Тара ОПТ 500 мл' : 'Тара ОПТ 900 мл', filmPer: 1, boxPer: 0};
   return null;
 }
@@ -1734,7 +1734,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-11-04-cost';
+const APP_VER = '2026-11-09-tara';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
