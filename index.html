@@ -219,6 +219,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'что есть на складе': 'omborda nima bor', 'пересчёт по факту': 'haqiqiy sanoq', 'Себестоимость': 'Tannarx', 'накладные, зарплата, цена 1 кг': 'ustama xarajatlar, ish haqi, 1 kg narxi',
   'Открыть →': 'Ochish →', 'Проблем не найдено': 'Muammo topilmadi', 'Сроки и проверки →': 'Muddatlar va tekshiruvlar →', 'Выгрузить →': 'Tushirish →',
   // общие
+  'Комментарий': 'Izoh', 'Нажмите, чтобы написать': 'Yozish uchun bosing', 'Например: 70 кг по 81 000 с НДС + 4,9 кг бонусом': "Masalan: 70 kg 81 000 dan QQS bilan + 4,9 kg bonus",
   'обязательно': 'majburiy', '(можно не заполнять)': '(ixtiyoriy)', 'Нажмите, чтобы ввести': 'Kiritish uchun bosing',
   'Сменить': "O'zgartirish", 'Изменить': "O'zgartirish", 'Недавние:': 'Oxirgilar:', 'на складе:': 'omborda:',
   'Ничего не найдено. Проверьте название или добавьте товар в Справочник таблицы.': "Hech narsa topilmadi. Nomini tekshiring yoki mahsulotni jadvaldagi Ma'lumotnomaga qo'shing.",
@@ -1297,7 +1298,10 @@ function vInv_valid() {
 /* ----- низ формы: кнопка «Проверить и записать» ----- */
 function foot(V) {
   const ok = !V.miss.length && !V.block.length;
-  return `<div class="foot">${V.miss.length ? `<div class="miss">Осталось заполнить: ${esc(V.miss.join(', '))}</div>` : ''}
+  // комментарий к записи (10.11.2026): уходит в графу «Примечание» таблицы
+  const note = ['in', 'out', 'prod', 'inv'].includes(SCR) ? `<div class="card">${lbl('💬', 'Комментарий', false)}
+    <button class="qbox" data-a="note"><span class="v ${F.note ? '' : 'empty'}" style="font-size:20px;white-space:normal;text-align:left">${F.note ? esc(F.note) : 'Нажмите, чтобы написать'}</span></button></div>` : '';
+  return `${note}<div class="foot">${V.miss.length ? `<div class="miss">Осталось заполнить: ${esc(V.miss.join(', '))}</div>` : ''}
     ${V.block.map(b => `<div class="msg bad" style="margin:0 0 10px">⛔ ${esc(b)}</div>`).join('')}
     <button class="btn ok wide" style="min-height:76px;font-size:24px" data-a="confirm" ${ok ? '' : 'disabled'}>Проверить и записать →</button></div>`;
 }
@@ -1305,6 +1309,7 @@ function currentValid() { return ({in: vIn_valid, out: vOut_valid, prod: vProd_v
 
 async function confirmWrite() {
   const V = currentValid(); if (V.miss.length || V.block.length) return;
+  if (F.note && V.data) { V.data = Object.assign({}, V.data, {note: F.note}); V.sum = V.sum.concat([['Комментарий', F.note]]); }
   const yes = await dialog(`<h3>Проверьте перед записью</h3><table class="sum">${V.sum.map(r => `<tr><td>${esc(r[0])}</td><td>${esc(r[1])}</td></tr>`).join('')}</table>
     ${V.warn.map(w => `<div class="msg warn">⚠ ${esc(w)}</div>`).join('')}`,
     [{t: '← Исправить', v: false}, {t: '✓ Всё верно, записать', cls: 'ok', v: true}]);
@@ -1384,6 +1389,7 @@ function vRec() {
     h += `<div class="card"><div class="sub">${REC_IC[x.sheet] || ''} ${esc(x.sheet)} · ${esc(x.type)} · ${esc(x.at)}${L.admin ? ' · ' + esc(x.who) : ''}</div>
       <div class="nm" style="font-size:22px;font-weight:800;margin:6px 0">${esc(x.item)}</div>
       <div>${esc(x.f.qty)}${x.f.batch ? ' · партия ' + esc(x.f.batch) : ''}${unitless}${x.f.why ? ' · ' + esc(x.f.why) : ''}</div>
+      ${x.note && x.note.indexOf('💬') >= 0 ? '<div class="hint">💬 ' + esc(x.note.slice(x.note.indexOf('💬') + 2).split(' · ✎')[0].trim()) + '</div>' : ''}
       ${x.note && x.note.indexOf('✎') >= 0 ? '<div class="hint">' + esc(x.note.slice(x.note.indexOf('✎'))) + '</div>' : ''}
       <div class="row" style="margin-top:10px"><button class="btn" data-a="recedit:${i}">✎ Изменить</button><button class="btn bad" data-a="recdel:${i}">🗑 Удалить</button></div></div>`;
   });
@@ -1654,6 +1660,7 @@ const ACT = {
   setdate: d => { F.date = d; render(); },
   editbatch: () => textInput('Номер партии', F.batch, v => { F.batch = v.replace(/;/g, ','); F.bManual = !!v; F.dirty = true; }, 'Как на этикетке или в накладной, например С-4'),
   otherfrom: () => textInput('Откуда / поставщик', F.from, v => { F.from = v; }),
+  note: () => textInput('Комментарий', F.note, v => { F.note = v.slice(0, 300); F.dirty = true; }, 'Например: 70 кг по 81 000 с НДС + 4,9 кг бонусом'),
   otherreason: () => textInput(REASON_REQ.includes(F.type) ? 'Причина' : 'Кому / причина', F.reason, v => { F.reason = v; F.dirty = true; }),
   same: i => { const r = invRows()[+i]; F.facts[i] = String(r.q).replace('.', ','); F.dirty = true; render(); },
   confirm: () => confirmWrite(),
@@ -1734,7 +1741,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-11-09-tara';
+const APP_VER = '2026-11-10-note';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
