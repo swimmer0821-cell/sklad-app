@@ -774,15 +774,10 @@ const HIST_T = {'Приход': 'История прихода', 'Расход':
 const histBtn = sheet => `<button class="hist-open" data-a="hist:${sheet}"><span><span>📋 </span><span>${HIST_T[sheet]}</span><small>что уже записано, по дням</small></span><span class="go">›</span></button>`;
 
 /* ================= ПРИХОД ================= */
-// Сквозной номер партии (с 12.11.2026): партии из одних цифр (сулугуни-сырьё 4, 6, 7…) идут по порядку —
-// предлагаем следующий после самого большого такого номера на складе. Товару без партий — тоже он.
-function lastNumBatch() {
-  let mx = 0; Object.values(S.lastBatch || {}).forEach(v => { v = String(v).trim(); if (/^\d+$/.test(v) && +v > mx) mx = +v; });
-  return mx;
-}
+// Номер партии (с 12.11.2026): у каждого товара свой счёт — следующий после его прошлой партии
+// (сулугуни-сырьё 7 → 8, курт К-3 → К-4). Товару без партий номер не придумываем — вводят с накладной.
 function suggestBatch(it, dateISO) {
-  const last = S.lastBatch[it.n], mx = lastNumBatch();
-  if ((!last || /^\d+$/.test(String(last).trim())) && mx) return String(mx + 1);
+  const last = S.lastBatch[it.n];
   if (!last) return '';
   let m = last.match(/^(.*?)(\d{6})$/); if (m && dateISO) return m[1] + ddmmyy(dateISO);
   m = last.match(/^(.*?)(\d+)$/); if (m) return m[1] + (+m[2] + 1);
@@ -796,8 +791,7 @@ function vIn() {
   h += card(n++, 'Тип прихода', chips('type', types, F.type), true);
   h += card(n++, 'Товар', picker('item', null), true, V.m.item);
   if (it && !pack) {
-    const own = S.lastBatch[it.n], mx = lastNumBatch();
-    const last = (!own || /^\d+$/.test(String(own).trim())) && mx ? String(mx) : own;
+    const last = S.lastBatch[it.n];
     h += card(n++, 'Номер партии', F.batch
       ? `<div class="sel"><div class="nm">${esc(F.batch)}</div><button class="btn" data-a="editbatch">Изменить</button></div>
          <div class="hint">${F.bManual ? 'Введён вручную.' : 'Предложен по прошлой партии (' + esc(last) + '). Проверьте по накладной/этикетке.'}</div>`
@@ -1750,7 +1744,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-11-12-batch';
+const APP_VER = '2026-11-12-batch2';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
