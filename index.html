@@ -264,6 +264,7 @@ const UZ = Object.assign({}, TYPES_UZ, UNITS_UZ, {
   'Партии, по которым факт не введён, не изменятся. Если нашли партию, которой нет в списке, — сообщите руководителю.': "Fakt kiritilmagan partiyalar o'zgarmaydi. Ro'yxatda yo'q partiya topilsa — rahbarga xabar bering.",
   'По этому товару нет партий с остатком. Если товар есть на складе — оформите его через «Приход».': "Bu mahsulot bo'yicha qoldig'i bor partiya yo'q. Mahsulot omborda bo'lsa — «Kirim» orqali rasmiylashtiring.",
   // остатки и внимание
+  'Вид': 'Turi', 'Граммаж': 'Gramm', 'Вкус': 'Ta\'m', 'Итого по выбору': "Tanlov bo'yicha jami", 'записей': 'yozuv',
   'Все': 'Hammasi', 'История прихода': 'Kirim tarixi', 'История расхода': 'Chiqim tarixi', 'История выпуска': 'Ishlab chiqarish tarixi',
   'История записей': 'Yozuvlar tarixi', 'что уже записано, по дням': "yozilganlar, kunlar bo'yicha", 'Все записи': 'Barcha yozuvlar', 'История': 'Tarix', '📋 История': '📋 Tarix', 'Показывать нулевые': "Nollarni ko'rsatish", 'Ничего не найдено': 'Hech narsa topilmadi',
   'Ничего не найдено. Нажмите «Показывать нулевые», чтобы увидеть товары без остатка.': "Hech narsa topilmadi. Qoldig'i yo'q mahsulotlarni ko'rish uchun «Nollarni ko'rsatish»ni bosing.",
@@ -1362,6 +1363,22 @@ const REC_F = {
   'Выпуск': [['qty', 'Сколько получили', 'num'], ['batch', 'Партия продукта', 'text'], ['rawQty', 'Сколько сырья взяли', 'num'], ['rawBatch', 'Партия сырья', 'text'], ['brak', 'Брак, кг', 'num']]
 };
 const REC_IC = {'Приход': '📥', 'Расход': '📤', 'Выпуск': '🏭'};
+// Разбор записи истории (с 18.11.2026): вид (группа справочника), вкус и граммаж — для фильтров-кнопок
+function recKind(x) { const it = itemBy(x.item); return (it && it.g) || 'Другое'; }
+function recGram(x) {
+  if (/упаков|тара|этикет|гофр|плёнк|пленк/i.test(recKind(x) + ' ' + x.item)) return '';   // у упаковки граммаж — это не её фасовка
+  const s = String(x.item);
+  if (/(^|\s)ОПТ(\s|$)/i.test(s) || /(^|\s)1\s*кг(?![а-яё])/i.test(s)) return '1 кг';
+  const m = s.match(/(\d+)\s*г(?![а-яё])/i); return m ? m[1] + ' г' : '';
+}
+function recTaste(x) {
+  if (!/морож|сулугуни|курт/i.test(x.item) || /тара|этикет|гофр|плёнк|пленк/i.test(x.item)) return '';
+  if (/^сулугуни/i.test(x.item)) return 'Сулугуни';
+  if (/^курт/i.test(x.item)) return 'Курт';
+  const t = String(x.item).replace(/^Мороженое\s+(ОПТ\s+)?/i, '').replace(/\s*\(контейнер\)/ig, '').replace(/,?\s*\d+\s*(г|кг)(?![а-яё])/ig, '').replace(/\s+/g, ' ').trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : (/сулугуни/i.test(x.item) ? 'Сулугуни' : /курт/i.test(x.item) ? 'Курт' : '');
+}
+const gramOrder = g => g === '1 кг' ? 1000 : parseInt(g, 10) || 0;
 const ruToIso = s => { const m = String(s || '').match(/^(\d{2})\.(\d{2})\.(\d{4})$/); return m ? m[3] + '-' + m[2] + '-' + m[1] : ''; };
 async function recLoad() {
   try { const j = await call('rec_list', {}, {msg: 'Загружаю записи…'}); F.list = j.data; render(); }
@@ -1373,11 +1390,23 @@ function vRec() {
   if (L.err) return `<div class="msg bad">${esc(L.err)}</div><button class="btn wide" data-a="recreload">Обновить</button>`;
   if (F.sel != null) return vRecEdit(L.items[F.sel]);
   const q = (F.q || '').toLowerCase();
-  const items = L.items.map((x, i) => [x, i]).filter(([x]) => (!F.sheet || x.sheet === F.sheet) && (!q || (x.item + ' ' + x.f.batch + ' ' + x.who + ' ' + x.type).toLowerCase().includes(q)));
+  const base = L.items.map((x, i) => [x, i]).filter(([x]) => (!F.sheet || x.sheet === F.sheet) && (!q || (x.item + ' ' + x.f.batch + ' ' + x.who + ' ' + x.type).toLowerCase().includes(q)));
+  const items = base.filter(([x]) => (!F.rk || recKind(x) === F.rk) && (!F.rg || recGram(x) === F.rg) && (!F.rt || recTaste(x) === F.rt));
+  // кнопки-фильтры: вид → граммаж → вкус (показываем только то, что есть в записях при уже выбранных фильтрах)
+  const uniq = a => [...new Set(a.filter(Boolean))];
+  const kinds = uniq(base.map(([x]) => recKind(x))).sort();
+  const b1 = base.filter(([x]) => !F.rk || recKind(x) === F.rk);
+  const grams = uniq(b1.map(([x]) => recGram(x))).sort((a, b) => gramOrder(a) - gramOrder(b));
+  const tastes = uniq(b1.filter(([x]) => !F.rg || recGram(x) === F.rg).map(([x]) => recTaste(x))).sort((a, b) => a.localeCompare(b, 'ru'));
+  const chipRow = (lbl, list, cur, act) => list.length ? `<div class="lbl" style="margin:4px 0 6px"><span>${lbl}</span></div><div class="chips" style="margin-bottom:10px;flex-wrap:nowrap;overflow-x:auto">
+      <button class="chip ${!cur ? 'on' : ''}" data-a="${act}:" style="flex:none"><span>Все</span></button>${list.map(v => `<button class="chip ${cur === v ? 'on' : ''}" data-a="${act}:${esc(v)}" style="flex:none">${esc(v)}</button>`).join('')}</div>` : '';
+  const filt = chipRow('Вид', kinds, F.rk, 'reck') + chipRow('Граммаж', grams, F.rg, 'recg') + chipRow('Вкус', tastes, F.rt, 'rect');
+  const sumU = {}; items.forEach(([x]) => { const n = parseFloat(String(x.f.qty).replace(',', '.')); const u = String(x.f.qty).replace(/^[\d.,\s-]+/, '').trim() || 'шт'; if (!isNaN(n)) sumU[u] = (sumU[u] || 0) + n; });
+  const sumTxt = (F.rk || F.rg || F.rt) && items.length ? `<div class="card" style="padding:10px 14px"><b><span>Итого по выбору</span>:</b> ${Object.entries(sumU).map(([u, n]) => (Math.round(n * 1000) / 1000).toString().replace('.', ',') + ' ' + esc(u)).join(' · ')} · <span>записей</span>: ${items.length}</div>` : '';
   let h = `<div class="hint" style="margin:0 0 10px">${L.admin ? 'Все записи за ' + L.days + ' дней.' : 'Ваши записи за ' + L.days + ' дней. Более старые исправляет руководитель.'}
     Неверный товар — удалите запись и внесите заново.</div>
     <div class="chips" style="margin-bottom:12px">${['', 'Приход', 'Расход', 'Выпуск'].map(x => `<button class="chip ${(F.sheet || '') === x ? 'on' : ''}" data-a="recsheet:${x}">${x ? (REC_IC[x] + ' ') : ''}<span>${x || 'Все записи'}</span></button>`).join('')}</div>
-    <input class="txt" placeholder="Поиск: товар, партия${L.admin ? ', кто' : ''}" value="${esc(F.q || '')}" data-recq="1" autocomplete="off" style="margin-bottom:12px">`;
+    <input class="txt" placeholder="Поиск: товар, партия${L.admin ? ', кто' : ''}" value="${esc(F.q || '')}" data-recq="1" autocomplete="off" style="margin-bottom:12px">` + filt + sumTxt;
   if (!items.length) h += '<div class="card"><div class="hint">Записей нет.</div></div>';
   let lastDay = '';
   const shown = items.slice(0, 120);
@@ -1391,6 +1420,7 @@ function vRec() {
     const unitless = x.sheet === 'Выпуск' ? ' ← ' + esc(x.raw) + ' ' + esc(x.f.rawQty) : '';
     h += `<div class="card"><div class="sub">${REC_IC[x.sheet] || ''} ${esc(x.sheet)} · ${esc(x.type)} · ${esc(x.at)}${L.admin ? ' · ' + esc(x.who) : ''}</div>
       <div class="nm" style="font-size:22px;font-weight:800;margin:6px 0">${esc(x.item)}</div>
+      <div class="chips" style="margin:0 0 6px">${[['reck', recKind(x)], ['recg', recGram(x)], ['rect', recTaste(x)]].filter(z => z[1]).map(z => `<button class="chip" data-a="${z[0]}:${esc(z[1])}" style="min-height:34px;padding:2px 10px;font-size:14px">${esc(z[1])}</button>`).join('')}</div>
       <div>${esc(x.f.qty)}${x.f.batch ? ' · партия ' + esc(x.f.batch) : ''}${unitless}${x.f.why ? ' · ' + esc(x.f.why) : ''}</div>
       ${x.note && x.note.indexOf('💬') >= 0 ? '<div class="hint">💬 ' + esc(x.note.slice(x.note.indexOf('💬') + 2).split(' · ✎')[0].trim()) + '</div>' : ''}
       ${x.note && x.note.indexOf('✎') >= 0 ? '<div class="hint">' + esc(x.note.slice(x.note.indexOf('✎'))) + '</div>' : ''}
@@ -1646,6 +1676,9 @@ const ACT = {
   recback: () => { F.sel = null; render(); },
   hist: sh => go('rec', {sheet: sh}),
   recsheet: sh => { F.sheet = sh; F.sel = null; render(); window.scrollTo(0, 0); },
+  reck: v => { F.rk = v || ''; F.rg = ''; F.rt = ''; F.sel = null; render(); window.scrollTo(0, 0); },
+  recg: v => { F.rg = v || ''; F.rt = ''; F.sel = null; render(); window.scrollTo(0, 0); },
+  rect: v => { F.rt = v || ''; F.sel = null; render(); window.scrollTo(0, 0); },
   recsave: () => recSave(),
   recdel: i => recDel(+i),
   recreload: () => { F.list = null; render(); recLoad(); },
@@ -1744,7 +1777,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-11-13-box45';
+const APP_VER = '2026-11-18-recfilt';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
