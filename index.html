@@ -423,6 +423,8 @@ Object.assign(UZ, {'Пакетов ОПТ (по 1 кг)': 'ULGURJI paketlar (1 k
   'По норме — 1 пакет на 1 кг. Спишутся пакеты и столько же термоэтикеток.': "Me'yor — 1 kg ga 1 paket. Paketlar va shuncha termoetiketka hisobdan chiqariladi.",
   'По 10 пакетов в коробке. Положили меньше или без коробки — исправьте (0 — без коробки).': "Qutida 10 paket. Kamroq yoki qutisiz bo'lsa — tuzating (0 — qutisiz).",
   'Не хватает упаковки': "Qadoq yetarli emas", 'Записать всё равно': 'Baribir yozish', '← Не записывать': '← Yozmaslik', 'Упаковка (авто)': 'Qadoq (avto)'});
+Object.assign(UZ, {'Гофра': 'Gofra', 'без коробки': 'qutisiz'});
+UZR.push([/^По (\d+) шт в коробке, неполная коробка — тоже коробка\. Сколько коробок ушло на самом деле — исправьте \(0 — без коробки\)\.$/, (m, n) => 'Qutida ' + n + " dona, to'lmagan quti ham quti. Aslida nechta quti ketganini tuzating (0 — qutisiz)."]);
 UZR.push([/^По (\d+) шт в коробке\. Положили меньше или без коробки — исправьте \(0 — без коробки\)\.$/, (m, n) => 'Qutida ' + n + " dona. Kamroq yoki qutisiz bo'lsa — tuzating (0 — qutisiz)."]);
 UZR.push([/^Предложил\(а\): (.+)$/, (m, x) => 'Taklif qildi: ' + x], [/^Не нашли «(.+)»\?$/, (m, x) => '«' + x + '» topilmadimi?']);
 PHR_UZ.unshift(['📨 Отправлено руководителю на подтверждение:', '📨 Tasdiqlash uchun rahbarga yuborildi:'], ['Когда позицию добавят, она появится в списке.', "Pozitsiya qo'shilgach, ro'yxatda paydo bo'ladi."],
@@ -566,7 +568,7 @@ const TITLES = {home: CFG.APP_NAME, in: '📥 Приход', out: '📤 Расх
 function go(scr, keep) {
   SCR = scr; F = Object.assign({dirty: false}, keep || {}); OPTS = {}; PICKG = {};
   if (scr === 'in') Object.assign(F, {type: F.type || 'Закупка', item: null, batch: '', bManual: false, date: today(), exp: '', qty: '', from: '', price: '', pay: ''});
-  if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: ''});
+  if (scr === 'out') Object.assign(F, {type: F.type || 'Отгрузка дистрибьютору', item: null, bs: null, sel: 0, qty: '', reason: '', gboxes: '', gboxes_auto: ''});
   if (scr === 'prod') Object.assign(F, {mode: F.mode || 'load', item: null, raw: null, bs: null, sel: 0, rawQty: '', qty: '', batch: '', bManual: false, brak: '', load: null});
   if (scr === 'inv') Object.assign(F, {item: null, bs: null, facts: {}});
   if (scr === 'rec') { Object.assign(F, {list: null, sel: null, q: '', sheet: F.sheet || ''}); setTimeout(recLoad, 0); }
@@ -847,7 +849,7 @@ function vOutPack() {
   const it = F.item, V = vOut_valid();
   let n = 2, h = '';
   h += card(n++, 'Упаковка', picker('item', ['Упаковка']) +
-    '<div class="hint">Для контейнеров 20/30/100 г, Курта 30 г, Сулугуни 50 г и мороженого ОПТ упаковка списывается сама при «Выпуск». Здесь — для пачек, 150 г, шоу-боксов, а также испорченная или лишняя упаковка.</div>', true, V.m.item);
+    '<div class="hint">Для контейнеров 20/30/100 г, Курта 30 г, Сулугуни 50 г и мороженого ОПТ упаковка списывается сама при «Выпуск» (гофра — при отгрузке, в «Расходе»). Здесь — для пачек, 150 г, шоу-боксов, а также испорченная или лишняя упаковка.</div>', true, V.m.item);
   h += '</div><div>';
   h += card(n++, 'Количество', it ? qbox('qty', 'Количество: ' + it.n, it.u, unitInt(it.u)) +
     `<div class="hint">Доступно: <b>${fmt(stockQ(it.n))} ${esc(it.u)}</b></div>` +
@@ -875,16 +877,29 @@ function vOut() {
       (F.sel === 'auto' && num(F.qty) > 0 && !V.over && F.bs && F.bs.length ? `<div class="msg info">Спишется: ${esc(allocText(F.bs, num(F.qty)))}</div>` : ''), true, V.m.qty);
   }
   if (F.type === VAN_OUT) {   // загрузка машины агента — только агент из списка «Агент LAZA»
+    h += gofraCard(it, n); if (gofraRule(it)) n++;
     h += card(n++, 'Агент', (S.agents || []).length ? chips('reason', S.agents, F.reason) : '<div class="msg warn">Агентов нет. Руководитель добавляет агентов в приложении «Агент LAZA».</div>', true, V.m.reason);
     h += '</div></div>';
     return h + foot(V);
   }
+  h += gofraCard(it, n); if (gofraRule(it)) n++;
   const req = REASON_REQ.includes(F.type), list = (S.recent.to || {})[F.type] || [], other = F.reason && !list.includes(F.reason);
   h += card(n++, req ? 'Причина' : (SELL.includes(F.type) ? 'Кому' : 'Кому / причина'), chips('reason', list, F.reason,
     `<button class="chip ${other ? 'on' : ''}" data-a="otherreason">${other ? esc(F.reason) : (list.length ? 'Другое…' : 'Ввести…')}</button>`) +
     (req ? '<div class="hint">Брак и потери записываются отдельной строкой — причина обязательна.</div>' : ''), req ? true : false, V.m.reason);
   h += '</div></div>';
   return h + foot(V);
+}
+/* ----- Гофра при отгрузке (с 20.11.2026): неполная коробка тоже уходит в гофру — подсказка с округлением вверх ----- */
+function gofraRule(it) {
+  if (!SELL.includes(F.type)) return null;
+  const r = packRule(it); return r && !r.opt && r.boxPer ? r : null;
+}
+function gofraCard(it, n) {
+  const r = gofraRule(it), q = num(F.qty); if (!r || !(q > 0)) return '';
+  autoVal('gboxes', Math.ceil(Math.round(q) / r.boxPer - 1e-9));
+  return card(n, 'Коробок «Гофра 320×290×110»', qbox('gboxes', 'Коробок', 'шт', true) +
+    `<div class="hint">По ${r.boxPer} шт в коробке, неполная коробка — тоже коробка. Сколько коробок ушло на самом деле — исправьте (0 — без коробки).</div>`, true);
 }
 function vOutPack_valid() {
   const it = F.item, fp = F.fprod, m = {}, miss = [], block = [], warn = [];
@@ -894,7 +909,7 @@ function vOutPack_valid() {
   if (!fp) { m.fprod = 1; miss.push('что фасовали'); }
   const over = it && q > 0 && q > stockQ(it.n) + 1e-9;
   if (over) block.push('Количество больше остатка.');
-  if (fp && packRule(fp)) warn.push('Для «' + fp.n + '» тара, этикетка, плёнка и коробки уже списываются автоматически при «Выпуск → Фасовка». Здесь записывайте только испорченную или лишнюю упаковку.');
+  if (fp && packRule(fp)) warn.push('Для «' + fp.n + '» тара, этикетка и плёнка уже списываются автоматически при «Выпуск → Фасовка», гофра — при отгрузке. Здесь записывайте только испорченную или лишнюю упаковку.');
   const sum = it ? [['Операция', 'Расход · Фасовка (упаковка)'], ['Упаковка', it.n], ['Количество', fmt(q) + ' ' + it.u],
     ['Что фасовали', fp ? fp.n : '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]] : [];
   return {m, miss, block, warn, sum, over, action: 'out',
@@ -915,10 +930,12 @@ function vOut_valid() {
   if (b && b.d != null && b.d < 0 && SELL.includes(F.type)) block.push('Партия ' + b.b + ' просрочена — продавать нельзя. Оформите «Списание (срок)».');
   if (typeof F.sel === 'number' && F.sel > 0 && F.bs && F.bs[0]) warn.push('Не по сроку (FEFO): есть партия ' + F.bs[0].b + ' до ' + F.bs[0].exp);
   const bTxt = pack ? '—' : (F.sel === 'auto' && F.bs ? allocText(F.bs, q || 0) : (b ? b.b + ' (до ' + b.exp + ')' : '—'));
+  const gr = gofraRule(it), gb = gr && q > 0 ? Math.round(num(F.gboxes) || 0) : 0;
   const sum = it ? [['Операция', 'Расход · ' + F.type], ['Товар', it.n], ['Партия', bTxt], ['Количество', fmt(q) + ' ' + it.u],
-    [REASON_REQ.includes(F.type) ? 'Причина' : F.type === VAN_OUT ? 'Агент (в машину)' : 'Кому / причина', F.reason || '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]] : [];
+    [REASON_REQ.includes(F.type) ? 'Причина' : F.type === VAN_OUT ? 'Агент (в машину)' : 'Кому / причина', F.reason || '—'], ['Останется', fmt(r3(stockQ(it.n) - (q || 0))) + ' ' + it.u]]
+    .concat(gr && q > 0 ? [['Гофра', gb ? gb + ' шт' : 'без коробки']] : []) : [];
   return {m, miss, block, warn, sum, over, action: 'out',
-    data: it ? {type: F.type, item: it.n, qty: F.qty, reason: F.reason, batch: pack || F.sel === 'auto' || !b ? '' : b.b} : null};
+    data: it ? {type: F.type, item: it.n, qty: F.qty, reason: F.reason, batch: pack || F.sel === 'auto' || !b ? '' : b.b, boxes: gr && gb > 0 ? String(gb) : ''} : null};
 }
 
 /* ================= ВЫПУСК: загрузка → выгрузка, фасовка ================= */
@@ -981,7 +998,6 @@ function autoVal(key, def) {   // подставляет значение по �
 function packFields(it, q) {   // заполняет F.boxes / F.bags по норме и возвращает правило
   const r = packRule(it); if (!r || !(q > 0)) return r;
   if (r.opt) { autoVal('bags', Math.ceil(q - 1e-9)); autoVal('boxes', Math.floor((num(F.bags) || 0) / 10)); }
-  else if (r.boxPer) autoVal('boxes', Math.floor(Math.round(q) / r.boxPer));
   return r;
 }
 function packCards(it, q, n) {
@@ -990,9 +1006,7 @@ function packCards(it, q, n) {
   if (r.opt) {
     h += card(n++, 'Пакетов ОПТ (по 1 кг)', qbox('bags', 'Пакетов ОПТ', 'шт', true) + '<div class="hint">По норме — 1 пакет на 1 кг. Спишутся пакеты и столько же термоэтикеток.</div>', true);
     h += card(n++, 'Коробок «Гофра ОПТ»', qbox('boxes', 'Коробок', 'шт', true) + '<div class="hint">По 10 пакетов в коробке. Положили меньше или без коробки — исправьте (0 — без коробки).</div>', true);
-  } else if (r.boxPer) {
-    h += card(n++, 'Коробок «Гофра 320×290×110»', qbox('boxes', 'Коробок', 'шт', true) + `<div class="hint">По ${r.boxPer} шт в коробке. Положили меньше или без коробки — исправьте (0 — без коробки).</div>`, true);
-  }
+  }   // гофра 320×290×110 для фасованной продукции — при отгрузке («Расход»), с 20.11.2026
   return h;
 }
 function packSummary(it, q) {
@@ -1001,12 +1015,12 @@ function packSummary(it, q) {
     const b = Math.round(num(F.bags) || 0), x = Math.round(num(F.boxes) || 0);
     return [['Упаковка (авто)', 'Пакеты ОПТ — ' + b + ' шт · термоэтикетка — ' + b + ' шт' + (x ? ' · гофра ОПТ — ' + x + ' шт' : '')]];
   }
-  const pcs = Math.round(q), film = Math.ceil(pcs / r.filmPer) * 5, x = Math.round(num(F.boxes) || 0);
-  return [['Упаковка (авто)', r.tara + ' — ' + pcs + ' шт · этикетка — ' + pcs + ' шт · плёнка — ' + film + ' г' + (r.boxPer && x ? ' · гофра — ' + x + ' шт' : '')]];
+  const pcs = Math.round(q), film = Math.ceil(pcs / r.filmPer) * 5;
+  return [['Упаковка (авто)', r.tara + ' — ' + pcs + ' шт · этикетка — ' + pcs + ' шт · плёнка — ' + film + ' г']];
 }
 function packData(it) {
   const r = packRule(it); if (!r) return {};
-  return r.opt ? {bags: F.bags, boxes: F.boxes} : r.boxPer ? {boxes: F.boxes} : {};
+  return r.opt ? {bags: F.bags, boxes: F.boxes} : {};
 }
 
 /* ----- Рецепты контейнеров: откуда брать сырьё (21.10.2026) -----
@@ -1777,7 +1791,7 @@ async function start() {
 }
 setInterval(() => { if (SCR === 'home' && !layer.innerHTML) render(); }, 60000); // обновляет таймер «Отменить»
 // Автообновление (с 23.10.2026): если на сайте новая версия приложения — перезагрузить, когда открыт главный экран и ничего не вводится
-const APP_VER = '2026-11-18-recfilt';
+const APP_VER = '2026-11-20-gofra';
 async function checkUpdate() {
   if (SCR !== 'home' || layer.innerHTML || (F && F.dirty)) return;
   try {
